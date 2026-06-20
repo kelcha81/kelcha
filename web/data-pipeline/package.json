@@ -1,7 +1,10 @@
 {
   "name": "data-pipeline",
   "version": "1.0.0",
-  "description": "Dukascopy download + aggregation pipeline (run by the web app). Deps come from ../package.json; this file only marks the scripts as ESM.",
+  "description": "Dukascopy download + aggregation pipeline, spawned by the web app's /api/symbols/package route. Self-contained deps so it can be copied into the standalone web image.",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "dukascopy-node": "^1.6.0"
+  }
 }

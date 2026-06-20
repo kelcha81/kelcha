@@ -122,4 +122,7 @@ jobs:
             --region "$REGION" \
             --service-account "${{ vars.GCP_RUNTIME_SA }}" \
             --allow-unauthenticated \
-            --cpu 1 --memory 512Mi --min-instances 0 --max-instances 4
+            --execution-environment gen2 \
+            --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
+            --add-volume-mount "volume=candles,mount-path=/app/public/data" \
+            --cpu 1 --memory 1Gi --min-instances 0 --max-instances 4
