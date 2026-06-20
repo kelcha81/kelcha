@@ -28,8 +28,9 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      web: ${{ steps.filter.outputs.web }}
-      engine: ${{ steps.filter.outputs.engine }}
+      # A manual run (workflow_dispatch) force-deploys both services.
+      web: ${{ steps.filter.outputs.web == 'true' || github.event_name == 'workflow_dispatch' }}
+      engine: ${{ steps.filter.outputs.engine == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3

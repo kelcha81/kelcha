@@ -5,7 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .mypy_cache/
-labels/
-strategies/
 *.log
 .git
+# NOTE: do NOT ignore strategies/ (a Python package the engine imports) or
+# labels/ — excluding strategies/ crashes the container at startup.
