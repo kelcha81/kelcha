@@ -27,7 +27,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 export function getManifest(symbol: string): Promise<Manifest> {
-  return fetchJson<Manifest>(`/data/${symbol}/manifest.json`);
+  return fetchJson<Manifest>(`/api/data/${symbol}/manifest.json`);
 }
 
 /**
@@ -54,7 +54,7 @@ export async function seedSymbol(
   const months: string[] = [];
 
   for (const chunkPath of m1Chunks) {
-    const part = await fetchJson<Candle[]>(`/data/${symbol}/${chunkPath}`);
+    const part = await fetchJson<Candle[]>(`/api/data/${symbol}/${chunkPath}`);
     const month = chunkPath.replace('m1/', '').replace('.json', '');
     await putM1Chunk(symbol, month, part);
     months.push(month);
@@ -68,7 +68,7 @@ export async function seedSymbol(
   for (const tf of aggTfs) {
     const file = manifest.timeframes[tf]?.file;
     if (!file) continue;
-    const arr = await fetchJson<Candle[]>(`/data/${symbol}/${file}`);
+    const arr = await fetchJson<Candle[]>(`/api/data/${symbol}/${file}`);
     await putAggregate(symbol, tf, arr);
     tick(tf.toUpperCase());
   }
