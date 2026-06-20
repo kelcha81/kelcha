@@ -32,6 +32,7 @@ import shutil
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import auth
 import calibrate
 import optimize
 import strategies
@@ -213,10 +214,29 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(length) or b"{}")
 
+    def _gate(self):
+        """When auth is enabled: require a valid Firebase ID token, and the
+        `ictTraining` module for AI/calibration routes. Returns (code, payload)
+        to reject, or None to proceed."""
+        self.claims = {}
+        if not auth.required():
+            return None
+        claims = auth.verify(self.headers)
+        if claims is None:
+            return (401, {"error": "unauthorized"})
+        if auth.is_training_route(self.path) and not auth.has_module(claims, "ictTraining"):
+            return (403, {"error": "module 'ictTraining' is not enabled for this account"})
+        self.claims = claims
+        return None
+
     def do_OPTIONS(self):
         self._send(204, {})
 
     def do_GET(self):
+        gate = self._gate()
+        if gate:
+            self._send(*gate)
+            return
         path = self.path.rstrip("/")
         try:
             if path == "/strategies":
@@ -236,6 +256,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": str(exc)})
 
     def do_POST(self):
+        gate = self._gate()
+        if gate:
+            self._send(*gate)
+            return
         path = self.path.rstrip("/")
         try:
             if path == "/backtest":

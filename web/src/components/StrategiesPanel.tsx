@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '@/lib/auth';
 import { X, Sparkles, Play, Square, Save, ShieldCheck, BookOpen } from 'lucide-react';
 import { AVAILABLE_SYMBOLS, getSymbolInfo } from '@/lib/symbols';
 import { JournalModal } from './JournalModal';
@@ -96,6 +97,9 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
   const [strategies, setStrategies] = useState<Record<string, StrategyInfo> | null>(null);
   const [offline, setOffline] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
+  // ICT Training (Studio + Tune) is a per-account module, gated on a custom claim.
+  const { claims } = useAuth();
+  const hasTraining = Boolean((claims.modules as Record<string, unknown> | undefined)?.ictTraining);
 
   const reloadStrategies = () =>
     getStrategies()
@@ -121,6 +125,11 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
       .catch(() => setAiEnabled(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fall back to Run if ICT Training isn't (or is no longer) enabled.
+  useEffect(() => {
+    if (!hasTraining && mode !== 'run') setMode('run');
+  }, [hasTraining, mode]);
 
   // --- Run mode state ---
   const activeTab = useActiveTab();
@@ -222,7 +231,7 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold">ICT Strategies</span>
             <div className="flex rounded border border-slate-700 text-xs">
-              {(['run', 'studio', 'tune'] as Mode[]).map((m) => (
+              {((hasTraining ? ['run', 'studio', 'tune'] : ['run']) as Mode[]).map((m) => (
                 <button
                   key={m}
                   type="button"

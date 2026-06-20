@@ -17,7 +17,8 @@ RUN pip install --no-cache-dir \
     "anthropic>=0.40" \
     "optuna>=3.6" \
     "numpy>=1.26" \
-    "scikit-learn>=1.4"
+    "scikit-learn>=1.4" \
+    "firebase-admin>=6.5"
 
 COPY . .
 

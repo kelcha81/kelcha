@@ -80,7 +80,7 @@ jobs:
             --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest" \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }},readonly=true" \
             --add-volume-mount "volume=candles,mount-path=/mnt/candles" \
-            --set-env-vars "ICT_DATA_DIR=/mnt/candles" \
+            --set-env-vars "ICT_DATA_DIR=/mnt/candles,ICT_REQUIRE_AUTH=1,FIREBASE_PROJECT_ID=lc-trading" \
             --cpu 1 --memory 1Gi --min-instances 0 --max-instances 4
 
   deploy-web:
