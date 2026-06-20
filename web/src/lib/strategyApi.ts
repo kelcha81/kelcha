@@ -5,7 +5,18 @@
 
 // Engine base URL. Local dev defaults to the sidecar on :8000; in the cloud
 // set NEXT_PUBLIC_ENGINE_URL to the engine's Cloud Run URL at build time.
+import { getIdToken } from './firebase';
+
 const BASE = process.env.NEXT_PUBLIC_ENGINE_URL?.replace(/\/$/, '') || 'http://localhost:8000';
+
+// All engine calls go through here so the caller's Firebase ID token rides along
+// as a Bearer credential (the engine verifies it and enforces module access).
+async function efetch(url: string, init?: RequestInit): Promise<Response> {
+  const token = await getIdToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return fetch(url, { ...init, headers });
+}
 
 export interface StrategyInfo {
   label: string;
@@ -77,13 +88,13 @@ export interface BacktestRequest {
 }
 
 export async function getStrategies(): Promise<Record<string, StrategyInfo>> {
-  const res = await fetch(`${BASE}/strategies`);
+  const res = await efetch(`${BASE}/strategies`);
   if (!res.ok) throw new Error(`Backend error ${res.status}`);
   return res.json();
 }
 
 export async function runBacktest(req: BacktestRequest): Promise<BacktestResult> {
-  const res = await fetch(`${BASE}/backtest`, {
+  const res = await efetch(`${BASE}/backtest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req)
@@ -120,26 +131,26 @@ export interface GenerateRequest {
 
 /** Whether the backend has AI authoring enabled (SDK installed + API key set). */
 export async function getCapabilities(): Promise<{ ai: boolean }> {
-  const res = await fetch(`${BASE}/capabilities`);
+  const res = await efetch(`${BASE}/capabilities`);
   if (!res.ok) throw new Error(`Backend error ${res.status}`);
   return res.json();
 }
 
 /** Live Claude model catalogue for the model picker. */
 export async function listModels(): Promise<ModelInfo[]> {
-  const res = await fetch(`${BASE}/models`);
+  const res = await efetch(`${BASE}/models`);
   if (!res.ok) throw new Error(`Backend error ${res.status}`);
   return (await res.json()).models as ModelInfo[];
 }
 
 export async function getStrategyCode(name: string): Promise<StrategyCode> {
-  const res = await fetch(`${BASE}/strategy/${encodeURIComponent(name)}/code`);
+  const res = await efetch(`${BASE}/strategy/${encodeURIComponent(name)}/code`);
   if (!res.ok) throw new Error(`Could not load ${name} (${res.status})`);
   return res.json();
 }
 
 export async function validateStrategy(code: string): Promise<ValidateResult> {
-  const res = await fetch(`${BASE}/strategy/validate`, {
+  const res = await efetch(`${BASE}/strategy/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code })
@@ -148,7 +159,7 @@ export async function validateStrategy(code: string): Promise<ValidateResult> {
 }
 
 export async function saveStrategy(name: string, code: string): Promise<{ ok: boolean; name?: string; errors?: string[] }> {
-  const res = await fetch(`${BASE}/strategy/save`, {
+  const res = await efetch(`${BASE}/strategy/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, code })
@@ -178,7 +189,7 @@ export interface OptimizeResult {
 }
 
 export async function optimizeStrategy(req: OptimizeRequest): Promise<OptimizeResult> {
-  const res = await fetch(`${BASE}/optimize`, {
+  const res = await efetch(`${BASE}/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req)
@@ -202,7 +213,7 @@ export async function calibrateDetectors(req: {
   from?: number;
   to?: number;
 }): Promise<CalibrateResult> {
-  const res = await fetch(`${BASE}/calibrate`, {
+  const res = await efetch(`${BASE}/calibrate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req)
@@ -221,7 +232,7 @@ export async function generateStrategy(
   onText: (text: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const res = await fetch(`${BASE}/strategy/generate`, {
+  const res = await efetch(`${BASE}/strategy/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
