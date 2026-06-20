@@ -1,0 +1,14 @@
+# The core engine + detectors + tests are pure stdlib — nothing required here.
+#
+# AI strategy authoring (server.py /strategy/* endpoints) needs the Anthropic SDK.
+# The engine still runs without it — AI features just report unavailable.
+anthropic>=0.40
+
+# These are only needed for the later optimisation / modelling phases
+# (optimize.py, calibrate.py, optional ML ranker). Install when you reach them:
+#
+#   pip install -r requirements.txt
+#
+# optuna>=3.6        # hyper-parameter search for strategy + detector thresholds
+# numpy>=1.26        # vectorised feature building
+# scikit-learn>=1.4  # optional setup-quality ranker

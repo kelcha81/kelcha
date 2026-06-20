@@ -1,0 +1,4 @@
+node_modules/
+.dukascopy-cache/
+data/
+*.log

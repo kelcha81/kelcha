@@ -1,0 +1,124 @@
+# CI/CD: build + deploy the web app and ICT engine to Cloud Run.
+#
+# Auth uses Workload Identity Federation (no JSON keys). Configure these once
+# (see infra/gcp-setup.md), as repository Variables (Settings -> Variables):
+#   GCP_PROJECT_ID, GCP_REGION, GCP_AR_REPO, GCP_CANDLES_BUCKET,
+#   GCP_WIF_PROVIDER (full projects/.../providers/... resource name),
+#   GCP_DEPLOY_SA   (deployer service account email)
+#
+# Each service deploys only when its files change. The engine deploys first so
+# the web build can inline the engine's URL (NEXT_PUBLIC_ENGINE_URL).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+env:
+  REGION: ${{ vars.GCP_REGION }}
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  AR: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_AR_REPO }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      engine: ${{ steps.filter.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            engine:
+              - 'engine/**'
+              - '.github/workflows/deploy.yml'
+            web:
+              - 'web/**'
+              - '.github/workflows/deploy.yml'
+
+  deploy-engine:
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ubuntu-latest
+    environment: backtest   # variables/secrets live in this GitHub Environment
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Engine tests
+        run: cd engine && python run_tests.py
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - name: Build & push engine image
+        run: |
+          IMAGE="$AR/engine:${{ github.sha }}"
+          docker build -t "$IMAGE" ./engine
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy engine to Cloud Run
+        run: |
+          gcloud run deploy engine \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --allow-unauthenticated \
+            --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest" \
+            --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }},readonly=true" \
+            --add-volume-mount "volume=candles,mount-path=/mnt/candles" \
+            --set-env-vars "ICT_DATA_DIR=/mnt/candles" \
+            --cpu 1 --memory 1Gi --min-instances 0 --max-instances 4
+
+  deploy-web:
+    needs: [changes, deploy-engine]
+    # Run if web changed; tolerate engine job being skipped (no engine changes).
+    if: |
+      always() &&
+      needs.changes.outputs.web == 'true' &&
+      (needs.deploy-engine.result == 'success' || needs.deploy-engine.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: backtest   # variables/secrets live in this GitHub Environment
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - name: Resolve engine URL
+        id: engine
+        run: |
+          URL=$(gcloud run services describe engine --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Build & push web image
+        run: |
+          IMAGE="$AR/web:${{ github.sha }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_ENGINE_URL="${{ steps.engine.outputs.url }}" \
+            -t "$IMAGE" ./web
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy web to Cloud Run
+        run: |
+          gcloud run deploy web \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --allow-unauthenticated \
+            --cpu 1 --memory 512Mi --min-instances 0 --max-instances 4

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+*.log
+.venv/
+venv/
+labels/*.json
+.pytest_cache/
+logs/
+# AI-authored strategies (saved at runtime) + sandbox temp files
+strategies/user/
+ai/tmp*.py

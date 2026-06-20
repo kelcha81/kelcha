@@ -1,0 +1,20 @@
+# Caches / build / deps (subdirs also ignore their own)
+.dukascopy-cache/
+node_modules/
+.next/
+out/
+build/
+
+# Large regenerable market data (rebuild via forex-backtest pipeline)
+**/public/data/
+**/data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Misc
+*.log
+.DS_Store
+*.tsbuildinfo

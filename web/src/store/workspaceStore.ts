@@ -1,0 +1,114 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { useReplayStore } from '@/store/replayStore';
+import { defaultLayout, makePanes, type LayoutCount, type TabLayout } from '@/lib/layout';
+import type { Timeframe } from '@/store/replayStore';
+
+/** A workspace tab = one symbol, with its OWN layout and replay-head position. */
+export interface Tab {
+  id: string;
+  symbol: string;
+  label: string;
+  pricePrecision: number;
+  layout: TabLayout; // per-tab split/timeframes — independent of other tabs
+  savedHead?: number; // replay head when last left, restored on return
+  start?: number; // session window start (Unix ms); default = data start
+  end?: number; // session window end (Unix ms); default = data end
+}
+
+interface WorkspaceState {
+  tabs: Tab[];
+  activeTabId: string;
+  addTab: (tab: Omit<Tab, 'id' | 'layout'>) => void;
+  closeTab: (id: string) => void;
+  selectTab: (id: string) => void;
+  renameTab: (id: string, label: string) => void;
+  setActiveCount: (count: LayoutCount) => void;
+  setActivePaneTimeframe: (paneId: string, tf: Timeframe) => void;
+}
+
+const DEFAULT_TAB: Tab = {
+  id: 'tab-eurusd',
+  symbol: 'eurusd',
+  label: 'EUR/USD',
+  pricePrecision: 5,
+  layout: defaultLayout()
+};
+
+/** Snapshot the current replay head into the currently-active tab. */
+function saveHead(tabs: Tab[], activeTabId: string): Tab[] {
+  const head = useReplayStore.getState().currentTimestamp;
+  return tabs.map((t) => (t.id === activeTabId ? { ...t, savedHead: head } : t));
+}
+
+/** Update the active tab via `fn` (immutably). */
+function updateActive(tabs: Tab[], activeTabId: string, fn: (t: Tab) => Tab): Tab[] {
+  return tabs.map((t) => (t.id === activeTabId ? fn(t) : t));
+}
+
+export const useWorkspaceStore = create<WorkspaceState>()(
+  persist(
+    (set) => ({
+      tabs: [DEFAULT_TAB],
+      activeTabId: DEFAULT_TAB.id,
+
+      addTab: (tab) =>
+        set((s) => {
+          const id = `tab-${tab.symbol}-${Date.now()}`;
+          const tabs = saveHead(s.tabs, s.activeTabId);
+          return { tabs: [...tabs, { ...tab, id, layout: defaultLayout() }], activeTabId: id };
+        }),
+
+      closeTab: (id) =>
+        set((s) => {
+          const tabs = s.tabs.filter((t) => t.id !== id);
+          if (tabs.length === 0) return s;
+          const activeTabId = s.activeTabId === id ? tabs[0].id : s.activeTabId;
+          return { tabs, activeTabId };
+        }),
+
+      selectTab: (id) =>
+        set((s) => {
+          if (id === s.activeTabId) return s;
+          return { tabs: saveHead(s.tabs, s.activeTabId), activeTabId: id };
+        }),
+
+      renameTab: (id, label) =>
+        set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, label } : t)) })),
+
+      setActiveCount: (count) =>
+        set((s) => ({
+          tabs: updateActive(s.tabs, s.activeTabId, (t) => ({
+            ...t,
+            layout: { count, panes: makePanes(count, t.layout.panes) }
+          }))
+        })),
+
+      setActivePaneTimeframe: (paneId, tf) =>
+        set((s) => ({
+          tabs: updateActive(s.tabs, s.activeTabId, (t) => ({
+            ...t,
+            layout: {
+              ...t.layout,
+              panes: t.layout.panes.map((p) => (p.id === paneId ? { ...p, timeframe: tf } : p))
+            }
+          }))
+        }))
+    }),
+    {
+      name: 'forex-workspace',
+      version: 2,
+      // Backfill `layout` for tabs persisted before layout became per-tab.
+      migrate: (state) => {
+        const s = state as Partial<WorkspaceState>;
+        if (s.tabs) s.tabs = s.tabs.map((t) => ({ ...t, layout: t.layout ?? defaultLayout() }));
+        return s as WorkspaceState;
+      }
+    }
+  )
+);
+
+/** The currently active tab (falls back to the first tab). */
+export function useActiveTab(): Tab {
+  return useWorkspaceStore((s) => s.tabs.find((t) => t.id === s.activeTabId) ?? s.tabs[0]);
+}

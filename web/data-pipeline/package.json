@@ -1,0 +1,7 @@
+{
+  "name": "data-pipeline",
+  "version": "1.0.0",
+  "description": "Dukascopy download + aggregation pipeline (run by the web app). Deps come from ../package.json; this file only marks the scripts as ESM.",
+  "private": true,
+  "type": "module"
+}
