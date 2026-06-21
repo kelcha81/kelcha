@@ -12,9 +12,17 @@ import os
 _REQUIRE = os.environ.get("ICT_REQUIRE_AUTH", "").strip().lower() in ("1", "true", "yes", "on")
 _PROJECT = os.environ.get("FIREBASE_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
 
-# Routes behind the `ictTraining` module: AI authoring + calibration + tuning.
-# NB: "/strategies" (the plain list) is intentionally NOT here.
-_TRAINING_PREFIXES = ("/strategy", "/calibrate", "/optimize", "/models", "/capabilities")
+# The whole engine (backtest + strategy list + AI authoring + calibration) is the
+# `ictTraining` feature, so every route requires the module.
+_TRAINING_PREFIXES = (
+    "/strategies",
+    "/strategy",
+    "/backtest",
+    "/calibrate",
+    "/optimize",
+    "/models",
+    "/capabilities",
+)
 
 _admin_auth = None
 _init_failed = False

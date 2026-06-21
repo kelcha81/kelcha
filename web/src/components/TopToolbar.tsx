@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Square, Columns2, LayoutGrid, Boxes, FlaskConical, Database, CalendarRange, BookOpen, type LucideIcon } from 'lucide-react';
 import { useActiveTab, useWorkspaceStore } from '@/store/workspaceStore';
+import { useAuth } from '@/lib/auth';
 import { type LayoutCount } from '@/lib/layout';
 import { getSymbolInfo } from '@/lib/symbols';
 import { IndicatorsMenu } from '@/components/IndicatorsMenu';
@@ -24,6 +25,9 @@ export function TopToolbar() {
   const activeTab = useActiveTab();
   const count = activeTab.layout.count;
   const setCount = useWorkspaceStore((s) => s.setActiveCount);
+  // ICT Training module gates the Strategies feature (backtest + Studio + Tune).
+  const { claims } = useAuth();
+  const hasTraining = Boolean((claims.modules as Record<string, unknown> | undefined)?.ictTraining);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [strategiesOpen, setStrategiesOpen] = useState(false);
   const [dataOpen, setDataOpen] = useState(false);
@@ -62,13 +66,15 @@ export function TopToolbar() {
         <Boxes className="h-3.5 w-3.5" /> Plugins
       </button>
 
-      <button
-        type="button"
-        onClick={() => setStrategiesOpen(true)}
-        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
-      >
-        <FlaskConical className="h-3.5 w-3.5" /> Strategies
-      </button>
+      {hasTraining && (
+        <button
+          type="button"
+          onClick={() => setStrategiesOpen(true)}
+          className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
+        >
+          <FlaskConical className="h-3.5 w-3.5" /> Strategies
+        </button>
+      )}
 
       <button
         type="button"
@@ -101,7 +107,7 @@ export function TopToolbar() {
       </div>
 
       {pluginsOpen && <PluginManager onClose={() => setPluginsOpen(false)} />}
-      {strategiesOpen && <StrategiesPanel onClose={() => setStrategiesOpen(false)} />}
+      {hasTraining && strategiesOpen && <StrategiesPanel onClose={() => setStrategiesOpen(false)} />}
       {dataOpen && <DataManager onClose={() => setDataOpen(false)} />}
       {forecastOpen && <ForecastModal symbol={activeTab.symbol} onClose={() => setForecastOpen(false)} />}
       {journalOpen && (
