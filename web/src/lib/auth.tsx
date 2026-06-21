@@ -28,7 +28,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return onAuthStateChanged(firebaseAuth(), async (u) => {
       setUser(u);
-      setClaims(u ? ((await u.getIdTokenResult()).claims as Record<string, unknown>) : {});
+      // Force-refresh so newly-granted custom claims (admin, modules) are picked
+      // up without requiring a full sign-out/in.
+      setClaims(u ? ((await u.getIdTokenResult(true)).claims as Record<string, unknown>) : {});
       setLoading(false);
     });
   }, []);
