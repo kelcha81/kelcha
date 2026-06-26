@@ -5,7 +5,8 @@ import { persist } from 'zustand/middleware';
 // own settings (Trade notes folder / Backtest folder / Templates folder) so a
 // note the backtest app drops into the vault is auto-parsed by the plugin.
 export interface ObsidianConfig {
-  vaultPath: string; // absolute path to the Obsidian vault root
+  // The vault root is a File System Access directory handle (in IndexedDB via
+  // lib/obsidian/vaultFs), not a path — folders below are vault-relative.
   backtestFolder: string; // vault-relative folder for Backtest ASR notes
   liveFolder: string; // vault-relative folder for Live/Daily ASR notes (forward tests)
   forecastFolder: string; // vault-relative folder for Forecast (plan) notes
@@ -19,7 +20,6 @@ interface ObsidianState extends ObsidianConfig {
 export const useObsidianStore = create<ObsidianState>()(
   persist(
     (set) => ({
-      vaultPath: '',
       backtestFolder: 'Trades/Backtesting', // matches the plugin's default backtest folder
       liveFolder: 'Trades/ASR', // matches the plugin's live ASR folder
       forecastFolder: 'Trades/Forecast', // matches the plugin's Forecast folder

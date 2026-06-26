@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, BookOpen, Settings, Camera, Upload, Trash2 } from 'lucide-react';
+import { X, BookOpen, Settings, Camera, Upload, Trash2, FolderOpen } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
 import { captureActivePane } from '@/lib/chartShot';
 import {
@@ -13,6 +13,9 @@ import {
   AUTO_FILLED_KEYS,
   PLUGIN_MANAGED_KEYS
 } from '@/lib/obsidian/asr';
+import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/obsidian/vaultFs';
+import { saveJournalEntry } from '@/lib/journal';
+import { useAuth } from '@/lib/auth';
 
 // A trade from any source (ICT backtest or manual papertrade), normalized to the
 // fields the ASR builder needs.
@@ -79,7 +82,12 @@ export function JournalModal({
   onClose: () => void;
 }) {
   const cfg = useObsidianStore();
-  const [showSettings, setShowSettings] = useState(!cfg.vaultPath);
+  const vault = useVault();
+  const { user } = useAuth();
+  const [showSettings, setShowSettings] = useState(false);
+  useEffect(() => {
+    if (vault.ready && !vault.connected) setShowSettings(true);
+  }, [vault.ready, vault.connected]);
 
   // The user's resolved template (undefined = loading, null = none → built-in).
   const [template, setTemplate] = useState<string | null | undefined>(undefined);
@@ -137,22 +145,19 @@ export function JournalModal({
   // Read the template so the form reflects whatever fields the user's Obsidian
   // template currently declares (templates can change independently of the app).
   useEffect(() => {
-    if (!cfg.vaultPath) {
+    if (!vault.connected) {
       setTemplate(null);
       return;
     }
     let cancelled = false;
     setTemplate(undefined);
-    fetch(
-      `/api/obsidian?vault=${encodeURIComponent(cfg.vaultPath)}&templates=${encodeURIComponent(cfg.templatesFolder)}&file=${encodeURIComponent(templateFile)}`
-    )
-      .then((r) => r.json())
-      .then((d) => !cancelled && setTemplate(d.template ?? null))
+    readTemplate(cfg.templatesFolder, templateFile)
+      .then((t) => !cancelled && setTemplate(t))
       .catch(() => !cancelled && setTemplate(null));
     return () => {
       cancelled = true;
     };
-  }, [cfg.vaultPath, cfg.templatesFolder, templateFile]);
+  }, [vault.connected, cfg.templatesFolder, templateFile]);
 
   // Editable journal keys = template's frontmatter minus auto/plugin/hidden keys.
   const editableKeys = useMemo(() => {
@@ -166,16 +171,15 @@ export function JournalModal({
 
   // List existing ASR notes (in the active folder) so one can be reopened (md → form).
   useEffect(() => {
-    if (!cfg.vaultPath) return;
+    if (!vault.connected) return;
     let cancelled = false;
-    fetch(`/api/obsidian?vault=${encodeURIComponent(cfg.vaultPath)}&folder=${encodeURIComponent(folder)}&list=1`)
-      .then((r) => r.json())
-      .then((d) => !cancelled && setNotes(Array.isArray(d.notes) ? d.notes : []))
+    listNotes(folder)
+      .then((n) => !cancelled && setNotes(n))
       .catch(() => !cancelled && setNotes([]));
     return () => {
       cancelled = true;
     };
-  }, [cfg.vaultPath, folder]);
+  }, [vault.connected, folder]);
 
   const startNew = () => {
     setEditing(null);
@@ -190,11 +194,9 @@ export function JournalModal({
   const openExisting = async (name: string) => {
     if (!name) return startNew();
     try {
-      const d = await fetch(
-        `/api/obsidian?vault=${encodeURIComponent(cfg.vaultPath)}&folder=${encodeURIComponent(folder)}&note=${encodeURIComponent(name)}`
-      ).then((r) => r.json());
-      if (!d.content) return setMsg({ ok: false, text: 'Could not read that note.' });
-      const fm = parseFrontmatter(d.content);
+      const content = await readNote(folder, name);
+      if (!content) return setMsg({ ok: false, text: 'Could not read that note.' });
+      const fm = parseFrontmatter(content);
       const next: Record<string, string> = {};
       for (const [k, v] of Object.entries(fm)) {
         if (AUTO_FILLED_KEYS.has(k) || PLUGIN_MANAGED_KEYS.has(k) || HIDDEN_KEYS.has(k) || k === LIST_KEY) continue;
@@ -203,7 +205,7 @@ export function JournalModal({
       setFields(next);
       setIndicators(parseYamlList(fm[LIST_KEY]));
       setCaptures([]);
-      setEditing({ name, baseMd: d.content });
+      setEditing({ name, baseMd: content });
       setMsg(null);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -213,8 +215,8 @@ export function JournalModal({
   const canSave = !!editing || !!trade;
 
   const save = async () => {
-    if (!cfg.vaultPath) {
-      setMsg({ ok: false, text: 'Set your vault path first.' });
+    if (!vault.connected) {
+      setMsg({ ok: false, text: 'Connect your Obsidian vault first.' });
       setShowSettings(true);
       return;
     }
@@ -261,21 +263,9 @@ export function JournalModal({
         return;
       }
 
-      const res = await fetch('/api/obsidian', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vaultPath: cfg.vaultPath,
-          folder,
-          attachmentsSubfolder: ATTACH,
-          filename,
-          markdown,
-          images
-        })
-      }).then((r) => r.json());
-
-      if (res.ok) setMsg({ ok: true, text: `Saved ${res.path}` });
-      else setMsg({ ok: false, text: res.error || 'Write failed' });
+      await writeNote(folder, filename, markdown, images);
+      if (user) await saveJournalEntry(user.uid, { filename, folder, kind: tradeType, markdown, captures: asrCaptures });
+      setMsg({ ok: true, text: `Saved ${filename} to your vault.` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -416,15 +406,19 @@ export function JournalModal({
           {showSettings && (
             <div className="space-y-2 rounded border border-slate-800 p-2">
               <div className="text-[10px] uppercase text-slate-500">Vault</div>
-              <label className="block text-xs text-slate-400">
-                Vault path (absolute)
-                <input
-                  value={cfg.vaultPath}
-                  onChange={(e) => cfg.set({ vaultPath: e.target.value })}
-                  placeholder="C:\\Users\\you\\Obsidian\\Trading"
-                  className={`mt-0.5 w-full ${field}`}
-                />
-              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={vault.connect}
+                  disabled={!vault.supported}
+                  className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+                >
+                  <FolderOpen className="h-3 w-3" /> {vault.connected ? 'Change vault folder' : 'Connect vault folder'}
+                </button>
+                <span className="text-[11px] text-slate-400">
+                  {vault.connected ? vault.name : vault.supported ? 'Not connected' : 'Needs a Chromium browser'}
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block text-xs text-slate-400">
                   {tradeType === 'Live' ? 'Live ASR folder' : 'Backtest folder'}
@@ -454,7 +448,7 @@ export function JournalModal({
               ? 'Reading template…'
               : template
                 ? `Fields synced from your ${templateFile.replace(/\.md$/, '')}.`
-                : `Using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR template (set a vault path to sync your own).`}
+                : `Using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR template (connect your vault to sync your own).`}
           </div>
 
           <div className="grid grid-cols-2 gap-2">{editableKeys.map(renderField)}</div>

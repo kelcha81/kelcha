@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, CalendarRange, Settings, Camera, Upload, Trash2 } from 'lucide-react';
+import { X, CalendarRange, Settings, Camera, Upload, Trash2, FolderOpen } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
 import { captureActivePane } from '@/lib/chartShot';
 import { parseFrontmatter, parseFrontmatterKeys, parseYamlList, PLUGIN_MANAGED_KEYS } from '@/lib/obsidian/asr';
 import { buildForecast, updateForecast, FORECAST_AUTO_KEYS, TEMPLATE_FILE, type ForecastHorizon } from '@/lib/obsidian/forecast';
+import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/obsidian/vaultFs';
+import { saveForecastEntry } from '@/lib/journal';
+import { useAuth } from '@/lib/auth';
 
 const ATTACH = 'attachments';
 const SLOTS = ['Daily', '4hr', '1hr', '15 minutes'];
@@ -25,7 +28,12 @@ interface Capture {
 /** Create a Forecast (pre-trade plan) note in the Obsidian vault. */
 export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
   const cfg = useObsidianStore();
-  const [showSettings, setShowSettings] = useState(!cfg.vaultPath);
+  const vault = useVault();
+  const { user } = useAuth();
+  const [showSettings, setShowSettings] = useState(false);
+  useEffect(() => {
+    if (vault.ready && !vault.connected) setShowSettings(true);
+  }, [vault.ready, vault.connected]);
 
   const [horizon, setHorizon] = useState<ForecastHorizon>('Daily');
   const [template, setTemplate] = useState<string | null | undefined>(undefined);
@@ -43,23 +51,19 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
 
   // Read the matching Forecast template so the form reflects the user's fields.
   useEffect(() => {
-    if (!cfg.vaultPath) {
+    if (!vault.connected) {
       setTemplate(null);
       return;
     }
     let cancelled = false;
     setTemplate(undefined);
-    const url = `/api/obsidian?vault=${encodeURIComponent(cfg.vaultPath)}&templates=${encodeURIComponent(
-      cfg.templatesFolder
-    )}&file=${encodeURIComponent(TEMPLATE_FILE[horizon])}`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((d) => !cancelled && setTemplate(d.template ?? null))
+    readTemplate(cfg.templatesFolder, TEMPLATE_FILE[horizon])
+      .then((t) => !cancelled && setTemplate(t))
       .catch(() => !cancelled && setTemplate(null));
     return () => {
       cancelled = true;
     };
-  }, [cfg.vaultPath, cfg.templatesFolder, horizon]);
+  }, [vault.connected, cfg.templatesFolder, horizon]);
 
   const editableKeys = useMemo(() => {
     const keys = template ? parseFrontmatterKeys(template) : DEFAULT_KEYS;
@@ -70,16 +74,15 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
 
   // List existing Forecast notes so one can be reopened and updated (md → form).
   useEffect(() => {
-    if (!cfg.vaultPath) return;
+    if (!vault.connected) return;
     let cancelled = false;
-    fetch(`/api/obsidian?vault=${encodeURIComponent(cfg.vaultPath)}&folder=${encodeURIComponent(cfg.forecastFolder)}&list=1`)
-      .then((r) => r.json())
-      .then((d) => !cancelled && setNotes(Array.isArray(d.notes) ? d.notes : []))
+    listNotes(cfg.forecastFolder)
+      .then((n) => !cancelled && setNotes(n))
       .catch(() => !cancelled && setNotes([]));
     return () => {
       cancelled = true;
     };
-  }, [cfg.vaultPath, cfg.forecastFolder]);
+  }, [vault.connected, cfg.forecastFolder]);
 
   const startNew = () => {
     setEditing(null);
@@ -92,11 +95,9 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const openExisting = async (name: string) => {
     if (!name) return startNew();
     try {
-      const d = await fetch(
-        `/api/obsidian?vault=${encodeURIComponent(cfg.vaultPath)}&folder=${encodeURIComponent(cfg.forecastFolder)}&note=${encodeURIComponent(name)}`
-      ).then((r) => r.json());
-      if (!d.content) return setMsg({ ok: false, text: 'Could not read that note.' });
-      const fm = parseFrontmatter(d.content);
+      const content = await readNote(cfg.forecastFolder, name);
+      if (!content) return setMsg({ ok: false, text: 'Could not read that note.' });
+      const fm = parseFrontmatter(content);
       setHorizon(fm['forecast_horizon'] === 'Weekly' || /weekly/i.test(fm['Document type'] ?? '') ? 'Weekly' : 'Daily');
       const next: Record<string, string> = {};
       for (const [k, v] of Object.entries(fm)) {
@@ -106,7 +107,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
       setFields(next);
       setTargets(parseYamlList(fm[LIST_KEY]).join('\n'));
       setCaptures([]);
-      setEditing({ name, baseMd: d.content });
+      setEditing({ name, baseMd: content });
       setMsg(null);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -139,8 +140,8 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const removeCapture = (id: string) => setCaptures((prev) => prev.filter((c) => c.id !== id));
 
   const save = async () => {
-    if (!cfg.vaultPath) {
-      setMsg({ ok: false, text: 'Set your vault path first.' });
+    if (!vault.connected) {
+      setMsg({ ok: false, text: 'Connect your Obsidian vault first.' });
       setShowSettings(true);
       return;
     }
@@ -166,21 +167,9 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
         ({ filename, markdown } = buildForecast({ template, symbol, horizon, fields, listFields, captures: fcCaptures }));
       }
 
-      const res = await fetch('/api/obsidian', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vaultPath: cfg.vaultPath,
-          folder: cfg.forecastFolder,
-          attachmentsSubfolder: ATTACH,
-          filename,
-          markdown,
-          images
-        })
-      }).then((r) => r.json());
-
-      if (res.ok) setMsg({ ok: true, text: `Saved ${res.path}` });
-      else setMsg({ ok: false, text: res.error || 'Write failed' });
+      await writeNote(cfg.forecastFolder, filename, markdown, images);
+      if (user) await saveForecastEntry(user.uid, { filename, folder: cfg.forecastFolder, kind: horizon, markdown, captures: fcCaptures });
+      setMsg({ ok: true, text: `Saved ${filename} to your vault.` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -296,15 +285,19 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
           {showSettings && (
             <div className="space-y-2 rounded border border-slate-800 p-2">
               <div className="text-[10px] uppercase text-slate-500">Vault</div>
-              <label className="block text-xs text-slate-400">
-                Vault path (absolute)
-                <input
-                  value={cfg.vaultPath}
-                  onChange={(e) => cfg.set({ vaultPath: e.target.value })}
-                  placeholder="C:\\Users\\you\\Obsidian\\Trading"
-                  className={`mt-0.5 w-full ${field}`}
-                />
-              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={vault.connect}
+                  disabled={!vault.supported}
+                  className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+                >
+                  <FolderOpen className="h-3 w-3" /> {vault.connected ? 'Change vault folder' : 'Connect vault folder'}
+                </button>
+                <span className="text-[11px] text-slate-400">
+                  {vault.connected ? vault.name : vault.supported ? 'Not connected' : 'Needs a Chromium browser'}
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block text-xs text-slate-400">
                   Forecast folder
@@ -323,7 +316,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
               ? 'Reading template…'
               : template
                 ? `Fields synced from your ${horizon} Forecast Template. The plugin auto-links a same-date/same-pair ASR.`
-                : `Using the built-in ${horizon} Forecast template (set a vault path to sync your own).`}
+                : `Using the built-in ${horizon} Forecast template (connect your vault to sync your own).`}
           </div>
 
           <div className="grid grid-cols-2 gap-2">{editableKeys.map(renderField)}</div>
