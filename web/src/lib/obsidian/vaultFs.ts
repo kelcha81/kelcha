@@ -161,8 +161,16 @@ export function useVault() {
     };
   }, []);
 
-  // Re-grant the saved handle if possible, else pick a new folder. Must be from a click.
+  // Must be called from a user gesture (the directory picker requires one).
   const connect = async () => {
+    // Already connected → the user explicitly wants to switch folders, so always
+    // open the picker.
+    if (handle) {
+      setHandle(await pickVault());
+      return;
+    }
+    // A saved handle whose permission lapsed (e.g. after reload) re-grants in one
+    // click; otherwise prompt to choose a folder.
     if (await reconnect()) {
       setHandle(await getVaultHandle());
       return;
