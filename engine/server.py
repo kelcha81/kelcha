@@ -230,7 +230,13 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def do_OPTIONS(self):
-        self._send(204, {})
+        # Preflight: reply with CORS headers and NO body. A 204 with a body is a
+        # protocol error that Cloud Run's HTTP/2 frontend rejects with a 502,
+        # which strips the CORS headers and breaks every browser preflight.
+        self.send_response(204)
+        self._cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
         gate = self._gate()

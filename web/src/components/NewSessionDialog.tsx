@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { SYMBOL_LIST, type AssetClass } from '@/lib/symbols';
 import { usePackagedSymbols } from '@/hooks/usePackagedSymbols';
+import { getBounds } from '@/lib/candleSource';
 
 // Static data span for the date pickers (the session clamps to real bounds).
 const DATA_START = '2022-01-01';
@@ -24,6 +25,28 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
   const [nameEdited, setNameEdited] = useState(false);
   const [start, setStart] = useState(DATA_START);
   const [end, setEnd] = useState(DATA_END);
+  const [range, setRange] = useState<{ min: string; max: string } | null>(null);
+
+  // Reflect the symbol's actually-downloaded range in the date pickers so the
+  // session window always overlaps real data (an empty window pins the head).
+  useEffect(() => {
+    let cancelled = false;
+    getBounds(symbol).then((b) => {
+      if (cancelled) return;
+      if (b && b.max > b.min) {
+        const d = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+        const r = { min: d(b.min), max: d(b.max) };
+        setRange(r);
+        setStart(r.min);
+        setEnd(r.max);
+      } else {
+        setRange(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
 
   const onClass = (c: AssetClass) => {
     setAssetClass(c);
@@ -131,8 +154,8 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
               <input
                 type="date"
                 value={start}
-                min={DATA_START}
-                max={DATA_END}
+                min={range?.min ?? DATA_START}
+                max={range?.max ?? DATA_END}
                 onChange={(e) => setStart(e.target.value)}
                 className="mt-0.5 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-slate-100 [color-scheme:dark]"
               />
@@ -142,8 +165,8 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
               <input
                 type="date"
                 value={end}
-                min={DATA_START}
-                max={DATA_END}
+                min={range?.min ?? DATA_START}
+                max={range?.max ?? DATA_END}
                 onChange={(e) => setEnd(e.target.value)}
                 className="mt-0.5 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-slate-100 [color-scheme:dark]"
               />
@@ -151,6 +174,11 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
           </div>
           {tsOf(end) <= tsOf(start) && (
             <div className="text-xs text-red-400">End date must be after start date.</div>
+          )}
+          {range && (
+            <div className="text-[11px] text-slate-500">
+              Downloaded data for {symbol.toUpperCase()}: {range.min} → {range.max}
+            </div>
           )}
 
           <p className="text-[11px] text-slate-500">

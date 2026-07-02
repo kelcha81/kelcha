@@ -86,8 +86,15 @@ export const useReplayStore = create<ReplayState>((set) => ({
    *  parks at `startTs` (default: session start). */
   setSession: (symbol, dataBounds, opts) =>
     set(() => {
-      const min = Math.max(dataBounds.min, opts?.start ?? dataBounds.min);
-      const max = Math.min(dataBounds.max, opts?.end ?? dataBounds.max);
+      let min = Math.max(dataBounds.min, opts?.start ?? dataBounds.min);
+      let max = Math.min(dataBounds.max, opts?.end ?? dataBounds.max);
+      // If the requested window doesn't overlap the downloaded data, the head
+      // would be pinned (min >= max) and playback couldn't advance — fall back
+      // to the full data range so there's always room to play.
+      if (min >= max) {
+        min = dataBounds.min;
+        max = dataBounds.max;
+      }
       const bounds = { min, max };
       return {
         symbol,
