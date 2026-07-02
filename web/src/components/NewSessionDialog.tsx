@@ -9,7 +9,8 @@ import { getBounds } from '@/lib/candleSource';
 
 // Static data span for the date pickers (the session clamps to real bounds).
 const DATA_START = '2022-01-01';
-const DATA_END = '2025-12-31';
+// Fallback ceiling for not-yet-seeded symbols; the real max comes from getBounds.
+const DATA_END = new Date().toISOString().slice(0, 10);
 const tsOf = (date: string) => Date.parse(`${date}T00:00:00Z`);
 
 export function NewSessionDialog({ onClose }: { onClose: () => void }) {

@@ -3,7 +3,7 @@ import {
   putM1Chunk,
   putAggregate,
   putMeta,
-  hasSymbol,
+  getMeta,
   SCHEMA_VERSION,
   type SymbolMeta
 } from '@/lib/idb';
@@ -11,6 +11,8 @@ import {
 interface Manifest {
   symbol: string;
   pricePrecision: number;
+  dataMin?: number;
+  dataMax?: number;
   timeframes: Record<string, { chunks?: string[]; file?: string }>;
 }
 
@@ -31,33 +33,47 @@ export function getManifest(symbol: string): Promise<Manifest> {
 }
 
 /**
- * Seed a symbol into IndexedDB if not already present: M1 stored as monthly
- * chunks (each written straight through — never holding the full series in
- * memory), aggregates stored whole, then a bounds/months meta record written
- * last (its presence = "seeded").
+ * Seed (or incrementally refresh) a symbol in IndexedDB. Skips when already
+ * seeded on the current schema and the manifest has no newer data; otherwise
+ * writes new/changed M1 monthly chunks, refetches the (recomputed) aggregates,
+ * and updates the bounds/months meta — so the daily refresh Job's new bars show
+ * up in charts on the next session load.
  */
 export async function seedSymbol(
   symbol: string,
   onProgress?: (p: SeedProgress) => void
 ): Promise<void> {
-  if (await hasSymbol(symbol)) return;
-
   const manifest = await getManifest(symbol);
+  const existing = await getMeta(symbol);
+  const current = existing?.schemaVersion === SCHEMA_VERSION ? existing : undefined;
+
+  // Already seeded on this schema and nothing newer in the manifest → done.
+  const manifestMax = manifest.dataMax ?? 0;
+  if (current && (!manifestMax || manifestMax <= current.maxTs)) return;
+
+  const monthOf = (cp: string) => cp.replace('m1/', '').replace('.json', '');
   const m1Chunks = manifest.timeframes.m1.chunks ?? [];
   const aggTfs = (Object.keys(manifest.timeframes) as Timeframe[]).filter((tf) => tf !== 'm1');
-  const total = m1Chunks.length + aggTfs.length;
+
+  // Seed any month not yet stored, plus the last stored month (its final bars may
+  // have grown). Aggregates are recomputed every refresh, so always refetch them.
+  const seeded = new Set(current?.months ?? []);
+  const lastSeeded = current?.months?.length ? current.months[current.months.length - 1] : null;
+  const chunksToSeed = m1Chunks.filter((cp) => !seeded.has(monthOf(cp)) || monthOf(cp) === lastSeeded);
+
+  const total = chunksToSeed.length + aggTfs.length;
   let done = 0;
   const tick = (label: string) => onProgress?.({ done: ++done, total, label });
 
-  let minTs = Infinity;
-  let maxTs = -Infinity;
-  const months: string[] = [];
+  let minTs = current?.minTs ?? Infinity;
+  let maxTs = current?.maxTs ?? -Infinity;
+  const months = new Set(current?.months ?? []);
 
-  for (const chunkPath of m1Chunks) {
+  for (const chunkPath of chunksToSeed) {
     const part = await fetchJson<Candle[]>(`/api/data/${symbol}/${chunkPath}`);
-    const month = chunkPath.replace('m1/', '').replace('.json', '');
+    const month = monthOf(chunkPath);
     await putM1Chunk(symbol, month, part);
-    months.push(month);
+    months.add(month);
     if (part.length) {
       minTs = Math.min(minTs, part[0].timestamp);
       maxTs = Math.max(maxTs, part[part.length - 1].timestamp);
@@ -73,6 +89,12 @@ export async function seedSymbol(
     tick(tf.toUpperCase());
   }
 
-  const meta: SymbolMeta = { symbol, minTs, maxTs, months, schemaVersion: SCHEMA_VERSION };
+  const meta: SymbolMeta = {
+    symbol,
+    minTs: Number.isFinite(minTs) ? minTs : 0,
+    maxTs: Number.isFinite(maxTs) ? maxTs : 0,
+    months: [...months].sort(),
+    schemaVersion: SCHEMA_VERSION
+  };
   await putMeta(meta);
 }

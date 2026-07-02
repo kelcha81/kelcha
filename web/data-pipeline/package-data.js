@@ -140,7 +140,11 @@ async function main() {
     console.log(`[${SYMBOL}]   ${tf.padEnd(3)} ${candles.length.toLocaleString().padStart(8)} candles`);
   }
 
-  const manifest = { symbol: SYMBOL, pricePrecision, timeframes };
+  // dataMin/dataMax let the client detect when the bucket has newer data and
+  // re-seed just the delta (the daily refresh Job advances dataMax).
+  const dataMin = m1.length ? m1[0].timestamp : 0;
+  const dataMax = m1.length ? m1[m1.length - 1].timestamp : 0;
+  const manifest = { symbol: SYMBOL, pricePrecision, dataMin, dataMax, timeframes };
   await writeFile(join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
   console.log(`[${SYMBOL}] manifest written -> public/data/${SYMBOL}/manifest.json`);
 }
