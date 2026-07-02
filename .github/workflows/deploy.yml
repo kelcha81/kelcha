@@ -164,4 +164,4 @@ jobs:
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
             --set-env-vars "DUKASCOPY_CACHE_DIR=/app/public/data/_dukascache" \
-            --cpu 2 --memory 4Gi --task-timeout 3600 --max-retries 1
+            --cpu 2 --memory 4Gi --task-timeout 10800 --max-retries 1
