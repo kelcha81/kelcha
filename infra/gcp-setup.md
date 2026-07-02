@@ -197,6 +197,34 @@ Invoke-RestMethod "$ENGINE_URL/strategies"
 
 Open the web URL, run a backtest — it should hit the engine and return results.
 
+## 10. Daily candle refresh (Cloud Run Job + Scheduler)
+
+The `deploy-job` workflow builds + deploys a Cloud Run **Job** named `data-refresh`
+(it re-pulls each symbol from Dukascopy up to yesterday and re-packages into the
+candles bucket, so backtests run up to the previous day). The Job is created on
+first deploy; add a daily schedule once (runs 06:00 America/New_York, after the
+prior NY day has fully closed):
+
+```powershell
+gcloud scheduler jobs create http data-refresh-daily `
+  --location=$REGION `
+  --schedule="0 6 * * *" `
+  --time-zone="America/New_York" `
+  --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/data-refresh:run" `
+  --http-method=POST `
+  --oauth-service-account-email=$DEPLOY_SA
+```
+
+`$DEPLOY_SA` (roles/run.admin) can invoke the Job. Kick off an immediate backfill
+run any time with:
+
+```powershell
+gcloud run jobs execute data-refresh --region=$REGION
+```
+
+The dukascopy tick cache persists under `gs://$CANDLES_BUCKET/_dukascache/`, so
+after the first (full) run each daily run only fetches the new day.
+
 ## Notes / follow-ups
 - **Least privilege:** one shared runtime SA is used for simplicity. Split into
   per-service SAs (engine needs the secret + candles; web needs neither) when hardening.

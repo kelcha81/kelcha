@@ -31,6 +31,7 @@ jobs:
       # A manual run (workflow_dispatch) force-deploys both services.
       web: ${{ steps.filter.outputs.web == 'true' || github.event_name == 'workflow_dispatch' }}
       engine: ${{ steps.filter.outputs.engine == 'true' || github.event_name == 'workflow_dispatch' }}
+      job: ${{ steps.filter.outputs.job == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -42,6 +43,9 @@ jobs:
               - '.github/workflows/deploy.yml'
             web:
               - 'web/**'
+              - '.github/workflows/deploy.yml'
+            job:
+              - 'web/data-pipeline/**'
               - '.github/workflows/deploy.yml'
 
   deploy-engine:
@@ -126,3 +130,38 @@ jobs:
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
             --cpu 1 --memory 1Gi --min-instances 0 --max-instances 4
+
+  # Daily candle refresh — keeps the candles bucket current to yesterday so the
+  # engine backtests up to the previous day. Cloud Scheduler triggers it (see
+  # infra/gcp-setup.md); here we just build + (re)deploy the Job definition.
+  deploy-job:
+    needs: changes
+    if: needs.changes.outputs.job == 'true'
+    runs-on: ubuntu-latest
+    environment: backtest
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - name: Build & push data-refresh image
+        run: |
+          IMAGE="$AR/data-refresh:${{ github.sha }}"
+          docker build -t "$IMAGE" ./web/data-pipeline
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy the data-refresh Cloud Run Job
+        run: |
+          gcloud run jobs deploy data-refresh \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
+            --add-volume-mount "volume=candles,mount-path=/app/public/data" \
+            --set-env-vars "DUKASCOPY_CACHE_DIR=/app/public/data/_dukascache" \
+            --cpu 2 --memory 4Gi --task-timeout 3600 --max-retries 1

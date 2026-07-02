@@ -20,6 +20,9 @@ const FROM = process.argv[4] || '2022-01-01';
 const TO = process.argv[5] || '2025-12-31';
 const OUTPUT_DIR = join(dirname(fileURLToPath(import.meta.url)), 'data');
 const OUTPUT_FILE = join(OUTPUT_DIR, `${SYMBOL}-${TIMEFRAME}-${FROM}-to-${TO}.json`);
+// Persisting the dukascopy tick cache (DUKASCOPY_CACHE_DIR on a bucket in the
+// daily Job) makes re-pulls incremental — only new days are fetched.
+const CACHE_DIR = process.env.DUKASCOPY_CACHE_DIR || join(OUTPUT_DIR, '.cache');
 
 /** Inclusive-start, exclusive-end month windows spanning [from, to). */
 function monthRanges(from, to) {
@@ -51,6 +54,8 @@ async function fetchMonth(range) {
         dates: { from: range.from, to: range.to },
         timeframe: TIMEFRAME,
         format: 'json',
+        useCache: true,
+        cacheFolderPath: CACHE_DIR,
         retryCount: 5,
         retryOnEmpty: false
       });
