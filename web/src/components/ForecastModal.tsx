@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, CalendarRange, Settings, Camera, Upload, Trash2, FolderOpen } from 'lucide-react';
+import { X, CalendarRange, Camera, Upload, Trash2 } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
 import { captureActivePane } from '@/lib/chartShot';
 import { parseFrontmatter, parseFrontmatterKeys, parseYamlList, PLUGIN_MANAGED_KEYS } from '@/lib/obsidian/asr';
 import { buildForecast, updateForecast, FORECAST_AUTO_KEYS, TEMPLATE_FILE, type ForecastHorizon } from '@/lib/obsidian/forecast';
 import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/obsidian/vaultFs';
 import { saveForecastEntry } from '@/lib/journal';
+import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
 
 const ATTACH = 'attachments';
@@ -30,10 +31,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const cfg = useObsidianStore();
   const vault = useVault();
   const { user } = useAuth();
-  const [showSettings, setShowSettings] = useState(false);
-  useEffect(() => {
-    if (vault.ready && !vault.connected) setShowSettings(true);
-  }, [vault.ready, vault.connected]);
+  const toNotion = cfg.journalTarget === 'notion';
 
   const [horizon, setHorizon] = useState<ForecastHorizon>('Daily');
   const [template, setTemplate] = useState<string | null | undefined>(undefined);
@@ -51,8 +49,8 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
 
   // Read the matching Forecast template so the form reflects the user's fields.
   useEffect(() => {
-    if (!vault.connected) {
-      setTemplate(null);
+    if (toNotion || !vault.connected) {
+      setTemplate(null); // Notion + disconnected vault both use the built-in template
       return;
     }
     let cancelled = false;
@@ -63,7 +61,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
     return () => {
       cancelled = true;
     };
-  }, [vault.connected, cfg.templatesFolder, horizon]);
+  }, [toNotion, vault.connected, cfg.templatesFolder, horizon]);
 
   const editableKeys = useMemo(() => {
     const keys = template ? parseFrontmatterKeys(template) : DEFAULT_KEYS;
@@ -73,8 +71,9 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const setField = (k: string, v: string) => setFields((p) => ({ ...p, [k]: v }));
 
   // List existing Forecast notes so one can be reopened and updated (md → form).
+  // Obsidian-only: reopening/editing an existing note is a vault operation.
   useEffect(() => {
-    if (!vault.connected) return;
+    if (toNotion || !vault.connected) return;
     let cancelled = false;
     listNotes(cfg.forecastFolder)
       .then((n) => !cancelled && setNotes(n))
@@ -82,7 +81,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
     return () => {
       cancelled = true;
     };
-  }, [vault.connected, cfg.forecastFolder]);
+  }, [toNotion, vault.connected, cfg.forecastFolder]);
 
   const startNew = () => {
     setEditing(null);
@@ -140,9 +139,8 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const removeCapture = (id: string) => setCaptures((prev) => prev.filter((c) => c.id !== id));
 
   const save = async () => {
-    if (!vault.connected) {
-      setMsg({ ok: false, text: 'Connect your Obsidian vault first.' });
-      setShowSettings(true);
+    if (!toNotion && !vault.connected) {
+      setMsg({ ok: false, text: 'Connect your Obsidian vault in Settings first.' });
       return;
     }
     setBusy(true);
@@ -167,9 +165,14 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
         ({ filename, markdown } = buildForecast({ template, symbol, horizon, fields, listFields, captures: fcCaptures }));
       }
 
-      await writeNote(cfg.forecastFolder, filename, markdown, images);
+      if (toNotion) {
+        // Notion v1: page body carries the rendered forecast; screenshots stay local.
+        await notionJournal('forecast', filename.replace(/\.md$/, ''), markdown);
+      } else {
+        await writeNote(cfg.forecastFolder, filename, markdown, images);
+      }
       if (user) await saveForecastEntry(user.uid, { filename, folder: cfg.forecastFolder, kind: horizon, markdown, captures: fcCaptures });
-      setMsg({ ok: true, text: `Saved ${filename} to your vault.` });
+      setMsg({ ok: true, text: toNotion ? `Saved ${filename.replace(/\.md$/, '')} to Notion.` : `Saved ${filename} to your vault.` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -225,15 +228,11 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CalendarRange className="h-4 w-4" /> New Forecast — {symbol.toUpperCase()}
+            <span className="text-[10px] font-normal text-slate-500">→ {toNotion ? 'Notion' : 'Obsidian'}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setShowSettings((s) => !s)} className="text-slate-400 hover:text-white" aria-label="Vault settings">
-              <Settings className="h-4 w-4" />
-            </button>
-            <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+          <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -251,72 +250,49 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={editing?.name ?? ''}
-              onChange={(e) => openExisting(e.target.value)}
-              className={`flex-1 ${field}`}
-              title="Reopen an existing Forecast to update it"
-            >
-              <option value="">New forecast…</option>
-              {notes.map((n) => (
-                <option key={n} value={n}>
-                  {n.replace(/\.md$/, '')}
-                </option>
-              ))}
-            </select>
-            {editing && (
-              <button
-                type="button"
-                onClick={startNew}
-                className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
-              >
-                New
-              </button>
-            )}
-          </div>
-          {editing && (
-            <div className="rounded border border-amber-900/60 bg-amber-950/20 p-1.5 text-[11px] text-amber-300">
-              Editing <span className="font-mono">{editing.name}</span> — body &amp; date preserved; edited fields and new
-              screenshots are merged in.
-            </div>
-          )}
-
-          {showSettings && (
-            <div className="space-y-2 rounded border border-slate-800 p-2">
-              <div className="text-[10px] uppercase text-slate-500">Vault</div>
+          {!toNotion && (
+            <>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={vault.connect}
-                  disabled={!vault.supported}
-                  className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+                <select
+                  value={editing?.name ?? ''}
+                  onChange={(e) => openExisting(e.target.value)}
+                  className={`flex-1 ${field}`}
+                  title="Reopen an existing Forecast to update it"
                 >
-                  <FolderOpen className="h-3 w-3" /> {vault.connected ? 'Change vault folder' : 'Connect vault folder'}
-                </button>
-                <span className="text-[11px] text-slate-400">
-                  {vault.connected ? vault.name : vault.supported ? 'Not connected' : 'Needs a Chromium browser'}
-                </span>
+                  <option value="">New forecast…</option>
+                  {notes.map((n) => (
+                    <option key={n} value={n}>
+                      {n.replace(/\.md$/, '')}
+                    </option>
+                  ))}
+                </select>
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={startNew}
+                    className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                  >
+                    New
+                  </button>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block text-xs text-slate-400">
-                  Forecast folder
-                  <input value={cfg.forecastFolder} onChange={(e) => cfg.set({ forecastFolder: e.target.value })} className={`mt-0.5 w-full ${field}`} />
-                </label>
-                <label className="block text-xs text-slate-400">
-                  Templates folder
-                  <input value={cfg.templatesFolder} onChange={(e) => cfg.set({ templatesFolder: e.target.value })} className={`mt-0.5 w-full ${field}`} />
-                </label>
-              </div>
-            </div>
+              {editing && (
+                <div className="rounded border border-amber-900/60 bg-amber-950/20 p-1.5 text-[11px] text-amber-300">
+                  Editing <span className="font-mono">{editing.name}</span> — body &amp; date preserved; edited fields and new
+                  screenshots are merged in.
+                </div>
+              )}
+            </>
           )}
 
           <div className="text-[10px] text-slate-500">
-            {template === undefined
-              ? 'Reading template…'
-              : template
-                ? `Fields synced from your ${horizon} Forecast Template. The plugin auto-links a same-date/same-pair ASR.`
-                : `Using the built-in ${horizon} Forecast template (connect your vault to sync your own).`}
+            {toNotion
+              ? `Writing to Notion using the built-in ${horizon} Forecast fields.`
+              : template === undefined
+                ? 'Reading template…'
+                : template
+                  ? `Fields synced from your ${horizon} Forecast Template. The plugin auto-links a same-date/same-pair ASR.`
+                  : `Using the built-in ${horizon} Forecast template (connect your vault in Settings to sync your own).`}
           </div>
 
           <div className="grid grid-cols-2 gap-2">{editableKeys.map(renderField)}</div>
@@ -383,7 +359,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
             disabled={busy}
             className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
           >
-            {busy ? 'Saving…' : editing ? 'Update Forecast' : 'Save Forecast'}
+            {busy ? 'Saving…' : editing ? 'Update Forecast' : toNotion ? 'Save to Notion' : 'Save Forecast'}
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, BookOpen, Settings, Camera, Upload, Trash2, FolderOpen } from 'lucide-react';
+import { X, BookOpen, Camera, Upload, Trash2 } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
 import { captureActivePane } from '@/lib/chartShot';
 import {
@@ -15,6 +15,7 @@ import {
 } from '@/lib/obsidian/asr';
 import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/obsidian/vaultFs';
 import { saveJournalEntry } from '@/lib/journal';
+import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
 
 // A trade from any source (ICT backtest or manual papertrade), normalized to the
@@ -84,10 +85,7 @@ export function JournalModal({
   const cfg = useObsidianStore();
   const vault = useVault();
   const { user } = useAuth();
-  const [showSettings, setShowSettings] = useState(false);
-  useEffect(() => {
-    if (vault.ready && !vault.connected) setShowSettings(true);
-  }, [vault.ready, vault.connected]);
+  const toNotion = cfg.journalTarget === 'notion';
 
   // The user's resolved template (undefined = loading, null = none → built-in).
   const [template, setTemplate] = useState<string | null | undefined>(undefined);
@@ -145,8 +143,8 @@ export function JournalModal({
   // Read the template so the form reflects whatever fields the user's Obsidian
   // template currently declares (templates can change independently of the app).
   useEffect(() => {
-    if (!vault.connected) {
-      setTemplate(null);
+    if (toNotion || !vault.connected) {
+      setTemplate(null); // Notion + disconnected vault both use the built-in template
       return;
     }
     let cancelled = false;
@@ -157,7 +155,7 @@ export function JournalModal({
     return () => {
       cancelled = true;
     };
-  }, [vault.connected, cfg.templatesFolder, templateFile]);
+  }, [toNotion, vault.connected, cfg.templatesFolder, templateFile]);
 
   // Editable journal keys = template's frontmatter minus auto/plugin/hidden keys.
   const editableKeys = useMemo(() => {
@@ -170,8 +168,9 @@ export function JournalModal({
     setIndicators((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
 
   // List existing ASR notes (in the active folder) so one can be reopened (md → form).
+  // Obsidian-only: reopening/editing an existing note is a vault operation.
   useEffect(() => {
-    if (!vault.connected) return;
+    if (toNotion || !vault.connected) return;
     let cancelled = false;
     listNotes(folder)
       .then((n) => !cancelled && setNotes(n))
@@ -179,7 +178,7 @@ export function JournalModal({
     return () => {
       cancelled = true;
     };
-  }, [vault.connected, folder]);
+  }, [toNotion, vault.connected, folder]);
 
   const startNew = () => {
     setEditing(null);
@@ -215,9 +214,8 @@ export function JournalModal({
   const canSave = !!editing || !!trade;
 
   const save = async () => {
-    if (!vault.connected) {
-      setMsg({ ok: false, text: 'Connect your Obsidian vault first.' });
-      setShowSettings(true);
+    if (!toNotion && !vault.connected) {
+      setMsg({ ok: false, text: 'Connect your Obsidian vault in Settings first.' });
       return;
     }
     setBusy(true);
@@ -263,9 +261,14 @@ export function JournalModal({
         return;
       }
 
-      await writeNote(folder, filename, markdown, images);
+      if (toNotion) {
+        // Notion v1: page body carries the rendered ASR; screenshots stay local.
+        await notionJournal('journal', filename.replace(/\.md$/, ''), markdown);
+      } else {
+        await writeNote(folder, filename, markdown, images);
+      }
       if (user) await saveJournalEntry(user.uid, { filename, folder, kind: tradeType, markdown, captures: asrCaptures });
-      setMsg({ ok: true, text: `Saved ${filename} to your vault.` });
+      setMsg({ ok: true, text: toNotion ? `Saved ${filename.replace(/\.md$/, '')} to Notion.` : `Saved ${filename} to your vault.` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -325,21 +328,11 @@ export function JournalModal({
       >
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <BookOpen className="h-4 w-4" /> Journal to Obsidian
+            <BookOpen className="h-4 w-4" /> Journal to {toNotion ? 'Notion' : 'Obsidian'}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowSettings((s) => !s)}
-              className="text-slate-400 hover:text-white"
-              aria-label="Vault settings"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
-            <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+          <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -372,83 +365,49 @@ export function JournalModal({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <select
-              value={editing?.name ?? ''}
-              onChange={(e) => openExisting(e.target.value)}
-              className={`flex-1 ${field}`}
-              title="Reopen an existing ASR to update it"
-            >
-              <option value="">{trade ? 'Journal this trade (new ASR)…' : 'Open an existing ASR…'}</option>
-              {notes.map((n) => (
-                <option key={n} value={n}>
-                  {n.replace(/\.md$/, '')}
-                </option>
-              ))}
-            </select>
-            {editing && trade && (
-              <button
-                type="button"
-                onClick={startNew}
-                className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
-              >
-                New
-              </button>
-            )}
-          </div>
-          {editing && (
-            <div className="rounded border border-amber-900/60 bg-amber-950/20 p-1.5 text-[11px] text-amber-300">
-              Editing <span className="font-mono">{editing.name}</span> — body, trade fields &amp; date preserved; edited
-              fields and new screenshots are merged in.
-            </div>
-          )}
-
-          {showSettings && (
-            <div className="space-y-2 rounded border border-slate-800 p-2">
-              <div className="text-[10px] uppercase text-slate-500">Vault</div>
+          {!toNotion && (
+            <>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={vault.connect}
-                  disabled={!vault.supported}
-                  className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+                <select
+                  value={editing?.name ?? ''}
+                  onChange={(e) => openExisting(e.target.value)}
+                  className={`flex-1 ${field}`}
+                  title="Reopen an existing ASR to update it"
                 >
-                  <FolderOpen className="h-3 w-3" /> {vault.connected ? 'Change vault folder' : 'Connect vault folder'}
-                </button>
-                <span className="text-[11px] text-slate-400">
-                  {vault.connected ? vault.name : vault.supported ? 'Not connected' : 'Needs a Chromium browser'}
-                </span>
+                  <option value="">{trade ? 'Journal this trade (new ASR)…' : 'Open an existing ASR…'}</option>
+                  {notes.map((n) => (
+                    <option key={n} value={n}>
+                      {n.replace(/\.md$/, '')}
+                    </option>
+                  ))}
+                </select>
+                {editing && trade && (
+                  <button
+                    type="button"
+                    onClick={startNew}
+                    className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                  >
+                    New
+                  </button>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block text-xs text-slate-400">
-                  {tradeType === 'Live' ? 'Live ASR folder' : 'Backtest folder'}
-                  <input
-                    value={folder}
-                    onChange={(e) => cfg.set(tradeType === 'Live' ? { liveFolder: e.target.value } : { backtestFolder: e.target.value })}
-                    className={`mt-0.5 w-full ${field}`}
-                  />
-                </label>
-                <label className="block text-xs text-slate-400">
-                  Templates folder
-                  <input
-                    value={cfg.templatesFolder}
-                    onChange={(e) => cfg.set({ templatesFolder: e.target.value })}
-                    className={`mt-0.5 w-full ${field}`}
-                  />
-                </label>
-              </div>
-              <div className="text-[10px] text-slate-500">
-                Point this at the same vault + Backtest folder as the obsidian-ai-agents plugin so it parses the note.
-              </div>
-            </div>
+              {editing && (
+                <div className="rounded border border-amber-900/60 bg-amber-950/20 p-1.5 text-[11px] text-amber-300">
+                  Editing <span className="font-mono">{editing.name}</span> — body, trade fields &amp; date preserved; edited
+                  fields and new screenshots are merged in.
+                </div>
+              )}
+            </>
           )}
 
           <div className="text-[10px] text-slate-500">
-            {template === undefined
-              ? 'Reading template…'
-              : template
-                ? `Fields synced from your ${templateFile.replace(/\.md$/, '')}.`
-                : `Using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR template (connect your vault to sync your own).`}
+            {toNotion
+              ? `Writing to Notion using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR fields.`
+              : template === undefined
+                ? 'Reading template…'
+                : template
+                  ? `Fields synced from your ${templateFile.replace(/\.md$/, '')}.`
+                  : `Using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR template (connect your vault in Settings to sync your own).`}
           </div>
 
           <div className="grid grid-cols-2 gap-2">{editableKeys.map(renderField)}</div>
@@ -543,7 +502,7 @@ export function JournalModal({
             disabled={busy || !canSave}
             className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
           >
-            {busy ? 'Saving…' : editing ? 'Update ASR' : 'Save to Obsidian'}
+            {busy ? 'Saving…' : editing ? 'Update ASR' : toNotion ? 'Save to Notion' : 'Save to Obsidian'}
           </button>
         </div>
       </div>
