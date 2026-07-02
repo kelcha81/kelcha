@@ -42,10 +42,15 @@ function monthRanges(from, to) {
 }
 
 // How many month requests to run at once. Sequential month-by-month is reliable
-// but slow (latency stacks); a handful in parallel cuts wall-clock ~Nx. Tune via
-// env if a symbol/feed starts rate-limiting.
-const CONCURRENCY = Number(process.env.ICT_DL_CONCURRENCY) || 4;
+// but slow (latency stacks); a handful in parallel cuts wall-clock ~Nx. On the
+// cloud Job the dukascopy tick cache lives on a gcsfuse mount, and too many
+// concurrent writers there triggers 503 / deadline-exceeded on the mount that
+// surface as a month's "Unknown error"; keep the default modest. Tune via env.
+const CONCURRENCY = Number(process.env.ICT_DL_CONCURRENCY) || 2;
 
+// Returns the month's rows on success, or null after exhausting its own retries.
+// A single failed month must NOT throw here — one flaky month should not abort
+// the whole symbol; main() gathers failures and retries them sequentially.
 async function fetchMonth(range) {
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
@@ -61,11 +66,14 @@ async function fetchMonth(range) {
       });
       return Array.isArray(rows) ? rows : [];
     } catch (err) {
-      if (attempt === 5) throw new Error(`${range.label}: ${err?.message ?? err}`);
+      if (attempt === 5) {
+        console.warn(`  ${range.label}: ${err?.message ?? err} — giving up this pass`);
+        return null;
+      }
       await new Promise((r) => setTimeout(r, 1500 * attempt));
     }
   }
-  return [];
+  return null;
 }
 
 async function main() {
@@ -85,10 +93,25 @@ async function main() {
       const rows = await fetchMonth(months[i]);
       results[i] = rows;
       completed += 1;
-      console.log(`PROGRESS ${completed}/${months.length} ${months[i].label} (+${rows.length})`);
+      console.log(`PROGRESS ${completed}/${months.length} ${months[i].label} (${rows ? '+' + rows.length : 'FAIL — will retry'})`);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, months.length) }, worker));
+
+  // Sequential retry pass: months that failed the concurrent pass are almost
+  // always victims of load (gcsfuse/network contention peaks when many months
+  // download at once). Retrying them one-at-a-time clears it; only if a month
+  // still fails after this do we abort (a real gap would corrupt the series).
+  const failedIdx = months.map((_, i) => i).filter((i) => results[i] == null);
+  if (failedIdx.length) {
+    console.log(`Retrying ${failedIdx.length} month(s) sequentially: ${failedIdx.map((i) => months[i].label).join(', ')}`);
+    for (const i of failedIdx) {
+      results[i] = await fetchMonth(months[i]);
+      console.log(`RETRY ${months[i].label} (${results[i] ? '+' + results[i].length : 'still failing'})`);
+    }
+  }
+  const stillFailed = months.filter((_, i) => results[i] == null).map((m) => m.label);
+  if (stillFailed.length) throw new Error(`months failed after retries: ${stillFailed.join(', ')}`);
 
   const all = [];
   for (const rows of results) {
