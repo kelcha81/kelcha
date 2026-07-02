@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { BacktestStats, BacktestTrade, IctAnnotation } from '@/lib/strategyApi';
-import { getAllBacktests, putBacktest, deleteBacktest } from '@/lib/idb';
+import { loadBacktests, saveBacktest, removeBacktest } from '@/lib/workspaceData';
+import { firebaseAuth } from '@/lib/firebase';
 
 // Latest backtest result PER session tab, so it survives closing the Strategies
 // modal, switching tabs, AND a full reload — persisted to IndexedDB (keyed by the
@@ -32,6 +33,8 @@ interface BacktestVizState {
   select: (tabId: string, tradeId: string | null) => void;
   toggle: (key: VizKey) => void;
   hydrate: () => Promise<void>;
+  /** Wipe results (on sign-out / account switch). */
+  reset: () => void;
 }
 
 export const useBacktestStore = create<BacktestVizState>((set) => ({
@@ -46,7 +49,8 @@ export const useBacktestStore = create<BacktestVizState>((set) => ({
       results: { ...s.results, [tabId]: data },
       selected: { ...s.selected, [tabId]: null }
     }));
-    void putBacktest(tabId, data).catch(() => {});
+    const uid = firebaseAuth().currentUser?.uid;
+    if (uid) void saveBacktest(uid, tabId, data).catch(() => {});
   },
   clear: (tabId) => {
     set((s) => {
@@ -56,18 +60,21 @@ export const useBacktestStore = create<BacktestVizState>((set) => ({
       delete selected[tabId];
       return { results, selected };
     });
-    void deleteBacktest(tabId).catch(() => {});
+    const uid = firebaseAuth().currentUser?.uid;
+    if (uid) void removeBacktest(uid, tabId).catch(() => {});
   },
   select: (tabId, tradeId) => set((s) => ({ selected: { ...s.selected, [tabId]: tradeId } })),
   toggle: (key) => set((s) => ({ [key]: !s[key] }) as Partial<BacktestVizState>),
   // Load persisted results on app start; in-memory results (from a run this
   // session) win over the stored copy.
   hydrate: async () => {
+    const uid = firebaseAuth().currentUser?.uid;
+    if (!uid) return;
     try {
-      const stored = await getAllBacktests<BacktestResultData>();
-      set((s) => ({ results: { ...stored, ...s.results } }));
+      set({ results: await loadBacktests(uid), selected: {} });
     } catch {
-      /* IDB unavailable — stay in-memory */
+      /* Firestore unavailable — stay in-memory */
     }
-  }
+  },
+  reset: () => set({ results: {}, selected: {} })
 }));

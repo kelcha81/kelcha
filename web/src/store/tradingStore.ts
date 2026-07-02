@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 export type Side = 'long' | 'short';
 
@@ -73,6 +72,8 @@ interface TradingState {
   setAccount: (tabId: string, patch: Partial<Account>) => void;
   annotate: (tabId: string, tradeId: string, patch: { note?: string; tags?: string }) => void;
   clear: (tabId: string) => void;
+  /** Wipe everything (on sign-out / account switch). */
+  reset: () => void;
 }
 
 let counter = 0;
@@ -95,9 +96,10 @@ function toTrade(p: Position, exitPrice: number, exitTime: number, reason: Trade
   };
 }
 
-export const useTradingStore = create<TradingState>()(
-  persist(
-    (set) => ({
+// In-memory; the per-user copy lives in Firestore (see WorkspaceSync). No
+// localStorage persist — that would leak one account's trades to another on the
+// same browser.
+export const useTradingStore = create<TradingState>((set) => ({
       positions: {},
       pending: {},
       trades: {},
@@ -178,8 +180,8 @@ export const useTradingStore = create<TradingState>()(
           positions: { ...s.positions, [tabId]: [] },
           pending: { ...s.pending, [tabId]: [] },
           trades: { ...s.trades, [tabId]: [] }
-        }))
-    }),
-    { name: 'forex-trading' }
-  )
+        })),
+
+      reset: () => set({ positions: {}, pending: {}, trades: {}, accounts: {} })
+    })
 );

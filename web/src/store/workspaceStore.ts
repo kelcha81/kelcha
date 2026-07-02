@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { useReplayStore } from '@/store/replayStore';
 import { defaultLayout, makePanes, type LayoutCount, type TabLayout } from '@/lib/layout';
 import type { Timeframe } from '@/store/replayStore';
@@ -25,6 +24,10 @@ interface WorkspaceState {
   renameTab: (id: string, label: string) => void;
   setActiveCount: (count: LayoutCount) => void;
   setActivePaneTimeframe: (paneId: string, tf: Timeframe) => void;
+  /** Replace the whole workspace (on load from Firestore). */
+  hydrate: (tabs: Tab[], activeTabId: string) => void;
+  /** Reset to a single default tab (on sign-out / account switch). */
+  reset: () => void;
 }
 
 const DEFAULT_TAB: Tab = {
@@ -46,9 +49,9 @@ function updateActive(tabs: Tab[], activeTabId: string, fn: (t: Tab) => Tab): Ta
   return tabs.map((t) => (t.id === activeTabId ? fn(t) : t));
 }
 
-export const useWorkspaceStore = create<WorkspaceState>()(
-  persist(
-    (set) => ({
+// In-memory; the per-user copy lives in Firestore (see WorkspaceSync). No
+// localStorage persist so one account's tabs never bleed into another's.
+export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       tabs: [DEFAULT_TAB],
       activeTabId: DEFAULT_TAB.id,
 
@@ -93,19 +96,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               panes: t.layout.panes.map((p) => (p.id === paneId ? { ...p, timeframe: tf } : p))
             }
           }))
-        }))
-    }),
-    {
-      name: 'forex-workspace',
-      version: 2,
-      // Backfill `layout` for tabs persisted before layout became per-tab.
-      migrate: (state) => {
-        const s = state as Partial<WorkspaceState>;
-        if (s.tabs) s.tabs = s.tabs.map((t) => ({ ...t, layout: t.layout ?? defaultLayout() }));
-        return s as WorkspaceState;
-      }
-    }
-  )
+        })),
+
+      hydrate: (tabs, activeTabId) =>
+        set({
+          tabs: tabs.length ? tabs.map((t) => ({ ...t, layout: t.layout ?? defaultLayout() })) : [DEFAULT_TAB],
+          activeTabId: tabs.some((t) => t.id === activeTabId) ? activeTabId : (tabs[0]?.id ?? DEFAULT_TAB.id)
+        }),
+
+      reset: () => set({ tabs: [DEFAULT_TAB], activeTabId: DEFAULT_TAB.id })
+    })
 );
 
 /** The currently active tab (falls back to the first tab). */

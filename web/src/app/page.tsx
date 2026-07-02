@@ -3,6 +3,7 @@ import { Dashboard } from '@/components/Dashboard';
 import { AuthGate } from '@/components/AuthGate';
 import { AccountBar } from '@/components/AccountBar';
 import { SettingsSync } from '@/components/SettingsSync';
+import { WorkspaceSync } from '@/components/WorkspaceSync';
 
 export default function Home() {
   return (
@@ -10,6 +11,7 @@ export default function Home() {
       <AuthGate>
         <AccountBar />
         <SettingsSync />
+        <WorkspaceSync />
         <DashboardLoader>
           <Dashboard />
         </DashboardLoader>
