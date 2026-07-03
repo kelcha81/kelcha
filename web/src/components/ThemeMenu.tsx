@@ -8,11 +8,20 @@ import { MenuPopover } from '@/components/ui/menu';
 const SWATCHES: { key: keyof ChartTheme; label: string }[] = [
   { key: 'up', label: 'Up' },
   { key: 'down', label: 'Down' },
+  { key: 'upBorder', label: 'Up border' },
+  { key: 'downBorder', label: 'Down border' },
   { key: 'background', label: 'Background' },
   { key: 'grid', label: 'Grid' },
   { key: 'text', label: 'Text' },
   { key: 'axis', label: 'Axis' }
 ];
+
+/** Border swatches fall back to the body colour until explicitly set. */
+function swatchValue(theme: ChartTheme, key: keyof ChartTheme): string {
+  if (key === 'upBorder') return theme.upBorder ?? theme.up;
+  if (key === 'downBorder') return theme.downBorder ?? theme.down;
+  return theme[key] as string;
+}
 
 export function ThemeMenu() {
   const theme = useSettingsStore((s) => s.theme);
@@ -91,7 +100,7 @@ export function ThemeMenu() {
                 {label}
                 <input
                   type="color"
-                  value={theme[key]}
+                  value={swatchValue(theme, key)}
                   onChange={(e) => setTheme({ [key]: e.target.value })}
                   className="h-6 w-8 cursor-pointer rounded border border-slate-700 bg-transparent"
                 />

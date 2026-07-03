@@ -5,6 +5,10 @@ import { persist } from 'zustand/middleware';
 export interface ChartTheme {
   up: string;
   down: string;
+  /** Candle border colours; absent = follow the body colour (optional so
+   *  themes saved before this field existed keep working unchanged). */
+  upBorder?: string;
+  downBorder?: string;
   background: string;
   grid: string;
   text: string;

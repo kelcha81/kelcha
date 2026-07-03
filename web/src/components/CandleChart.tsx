@@ -34,8 +34,9 @@ function buildStyles(t: ChartTheme) {
       bar: {
         upColor: t.up,
         downColor: t.down,
-        upBorderColor: t.up,
-        downBorderColor: t.down,
+        // Borders are separately themable; unset = follow the body colour.
+        upBorderColor: t.upBorder ?? t.up,
+        downBorderColor: t.downBorder ?? t.down,
         upWickColor: t.up,
         downWickColor: t.down
       },
