@@ -32,7 +32,12 @@ export const notionDisconnect = () =>
   authed('/api/notion', { method: 'POST', body: JSON.stringify({ action: 'disconnect' }) });
 export const notionSaveConfig = (journalDbId: string, forecastDbId: string) =>
   authed('/api/notion', { method: 'POST', body: JSON.stringify({ action: 'config', journalDbId, forecastDbId }) });
-export const notionListDatabases = () =>
-  authed('/api/notion/databases').then((d) => d.databases as { id: string; title: string }[]);
+export interface NotionContent {
+  databases: { id: string; title: string }[];
+  pages: number; // non-database objects visible to the integration (diagnostic)
+}
+
+export const notionListContent = () =>
+  authed('/api/notion/databases').then((d) => ({ databases: d.databases ?? [], pages: d.pages ?? 0 }) as NotionContent);
 export const notionJournal = (kind: 'journal' | 'forecast', title: string, markdown: string) =>
   authed('/api/notion/journal', { method: 'POST', body: JSON.stringify({ kind, title, markdown }) });

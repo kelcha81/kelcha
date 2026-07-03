@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, FolderOpen } from 'lucide-react';
+import { X, FolderOpen, RefreshCw } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
 import { useVault } from '@/lib/obsidian/vaultFs';
 import {
@@ -9,8 +9,9 @@ import {
   notionConnect,
   notionDisconnect,
   notionSaveConfig,
-  notionListDatabases,
-  type NotionStatus
+  notionListContent,
+  type NotionStatus,
+  type NotionContent
 } from '@/lib/notion';
 import { Modal } from '@/components/ui/dialog';
 
@@ -22,16 +23,17 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const vault = useVault();
 
   const [status, setStatus] = useState<NotionStatus | null>(null);
-  const [dbs, setDbs] = useState<{ id: string; title: string }[]>([]);
+  const [content, setContent] = useState<NotionContent>({ databases: [], pages: 0 });
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const dbs = content.databases;
   const refreshNotion = async () => {
     try {
       const s = await notionStatus();
       setStatus(s);
-      if (s.connected) setDbs(await notionListDatabases());
+      if (s.connected) setContent(await notionListContent());
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     }
@@ -58,7 +60,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       await notionDisconnect();
-      setDbs([]);
+      setContent({ databases: [], pages: 0 });
       await refreshNotion();
     } finally {
       setBusy(false);
@@ -143,25 +145,56 @@ export function Settings({ onClose }: { onClose: () => void }) {
             <div className="text-xs font-semibold text-slate-300">Notion</div>
             {status?.connected ? (
               <>
-                <div className="text-[11px] text-emerald-400">Connected to {status.workspaceName}.</div>
-                <label className="block text-xs text-slate-400">
-                  Journal database
-                  <select value={status.journalDbId ?? ''} onChange={(e) => saveDbs(e.target.value, status.forecastDbId ?? '')} className={`mt-0.5 w-full ${field}`}>
-                    <option value="">— select —</option>
-                    {dbs.map((d) => (
-                      <option key={d.id} value={d.id}>{d.title}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-xs text-slate-400">
-                  Forecast database
-                  <select value={status.forecastDbId ?? ''} onChange={(e) => saveDbs(status.journalDbId ?? '', e.target.value)} className={`mt-0.5 w-full ${field}`}>
-                    <option value="">— select —</option>
-                    {dbs.map((d) => (
-                      <option key={d.id} value={d.id}>{d.title}</option>
-                    ))}
-                  </select>
-                </label>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-emerald-400">Connected to {status.workspaceName}.</span>
+                  <button
+                    type="button"
+                    onClick={refreshNotion}
+                    title="Re-check what the integration can see"
+                    className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700"
+                  >
+                    <RefreshCw className="h-3 w-3" /> Refresh
+                  </button>
+                </div>
+                {dbs.length === 0 ? (
+                  <div className="space-y-1 rounded border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-300">
+                    <div className="font-medium">
+                      {content.pages > 0
+                        ? `The integration can see ${content.pages} page(s) but no databases.`
+                        : 'The integration is valid but no content is shared with it yet.'}
+                    </div>
+                    <div className="text-amber-200/80">
+                      A token&apos;s read/write capabilities aren&apos;t enough — Notion only exposes content
+                      explicitly shared with the integration:
+                    </div>
+                    <ol className="list-decimal space-y-0.5 pl-4 text-amber-200/80">
+                      <li>In Notion, open the database you want journals in (the actual database, not a linked view).</li>
+                      <li>Click the <span className="font-mono">•••</span> menu (top-right) → <span className="font-medium">Connections</span> → add your integration.</li>
+                      <li>Come back here and hit <span className="font-medium">Refresh</span>.</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <>
+                    <label className="block text-xs text-slate-400">
+                      Journal database
+                      <select value={status.journalDbId ?? ''} onChange={(e) => saveDbs(e.target.value, status.forecastDbId ?? '')} className={`mt-0.5 w-full ${field}`}>
+                        <option value="">— select —</option>
+                        {dbs.map((d) => (
+                          <option key={d.id} value={d.id}>{d.title}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs text-slate-400">
+                      Forecast database
+                      <select value={status.forecastDbId ?? ''} onChange={(e) => saveDbs(status.journalDbId ?? '', e.target.value)} className={`mt-0.5 w-full ${field}`}>
+                        <option value="">— select —</option>
+                        {dbs.map((d) => (
+                          <option key={d.id} value={d.id}>{d.title}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
                 <button type="button" onClick={disconnect} disabled={busy} className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-40">
                   Disconnect
                 </button>

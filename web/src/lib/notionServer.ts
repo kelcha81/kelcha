@@ -48,15 +48,27 @@ export async function notionMe(token: string): Promise<string> {
   return me?.bot?.workspace_name || me?.name || 'Notion';
 }
 
-export async function notionDatabases(token: string): Promise<{ id: string; title: string }[]> {
+export interface NotionContent {
+  databases: { id: string; title: string }[];
+  /** Non-database objects (pages) the integration can see — diagnostic: an
+   *  internal integration only "sees" content explicitly shared with it. */
+  pages: number;
+}
+
+export async function notionContent(token: string): Promise<NotionContent> {
+  // Unfiltered search, partitioned server-side: distinguishes "nothing is
+  // shared with the integration" from "pages are shared but no database is".
   const data = await notion(token, 'search', {
     method: 'POST',
-    body: JSON.stringify({ filter: { property: 'object', value: 'database' }, page_size: 100 })
+    body: JSON.stringify({ page_size: 100 })
   });
-  return (data.results || []).map((d: { id: string; title?: { plain_text?: string }[] }) => ({
-    id: d.id,
-    title: (d.title || []).map((t) => t.plain_text || '').join('') || '(untitled)'
-  }));
+  const results = (data.results || []) as Array<{ object: string; id: string; title?: { plain_text?: string }[] }>;
+  return {
+    databases: results
+      .filter((r) => r.object === 'database')
+      .map((d) => ({ id: d.id, title: (d.title || []).map((t) => t.plain_text || '').join('') || '(untitled)' })),
+    pages: results.filter((r) => r.object !== 'database').length
+  };
 }
 
 async function titleProperty(token: string, dbId: string): Promise<string> {
