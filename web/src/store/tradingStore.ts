@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { settleBars } from '@/lib/fills';
+import type { Candle } from '@/store/replayStore';
 
 export type Side = 'long' | 'short';
 
@@ -69,6 +71,8 @@ interface TradingState {
   fillPending: (tabId: string, id: string, fillTime: number) => void;
   close: (tabId: string, posId: string, exitPrice: number, exitTime: number, reason?: Trade['reason']) => void;
   closeAll: (tabId: string, exitPrice: number, exitTime: number) => void;
+  /** Replay-driven settlement: fill limits + SL/TP across every m1 bar stepped over. */
+  settle: (tabId: string, bars: Candle[]) => void;
   setAccount: (tabId: string, patch: Partial<Account>) => void;
   annotate: (tabId: string, tradeId: string, patch: { note?: string; tags?: string }) => void;
   clear: (tabId: string) => void;
@@ -161,6 +165,23 @@ export const useTradingStore = create<TradingState>((set) => ({
           const closed = list.map((p) => toTrade(p, exitPrice, exitTime, 'manual', acc));
           return {
             positions: { ...s.positions, [tabId]: [] },
+            trades: { ...s.trades, [tabId]: [...(s.trades[tabId] ?? []), ...closed] }
+          };
+        }),
+
+      settle: (tabId, bars) =>
+        set((s) => {
+          if (!bars.length) return s;
+          const positions = s.positions[tabId] ?? [];
+          const pending = s.pending[tabId] ?? [];
+          if (!positions.length && !pending.length) return s;
+          const acc = s.accounts[tabId] ?? DEFAULT_ACCOUNT;
+          const r = settleBars(positions, pending, bars, nextId);
+          if (!r.fills.length && !r.closures.length) return s;
+          const closed = r.closures.map((c) => toTrade(c.position, c.price, c.time, c.reason, acc));
+          return {
+            positions: { ...s.positions, [tabId]: r.positions },
+            pending: { ...s.pending, [tabId]: r.pending },
             trades: { ...s.trades, [tabId]: [...(s.trades[tabId] ?? []), ...closed] }
           };
         }),

@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Crosshair, Settings } from 'lucide-react';
 import { useWorkspaceStore, useActiveTab } from '@/store/workspaceStore';
 import { useReplayStore } from '@/store/replayStore';
 import { useVisibleData } from '@/hooks/useVisibleData';
+import { getRange } from '@/lib/candleSource';
 import {
   useTradingStore,
   tradePnl,
@@ -44,7 +45,6 @@ export function TradingPanel() {
   const openPos = useTradingStore((s) => s.open);
   const placePending = useTradingStore((s) => s.placePending);
   const cancelPending = useTradingStore((s) => s.cancelPending);
-  const fillPending = useTradingStore((s) => s.fillPending);
   const close = useTradingStore((s) => s.close);
   const closeAll = useTradingStore((s) => s.closeAll);
   const setAccount = useTradingStore((s) => s.setAccount);
@@ -65,23 +65,25 @@ export function TradingPanel() {
   const [showAccount, setShowAccount] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
-  // Engine: fill pending when price reaches them, then auto-close SL/TP.
+  // Settlement: whenever the head moves FORWARD, walk every m1 bar in
+  // (prevHead, head] through the pure fill engine (lib/fills.ts) so limit fills
+  // and SL/TP exits are honored across jumps (fast speeds, day jumps, seeks).
+  // Tab switches and backward seeks just re-anchor without settling.
+  const prevRef = useRef<{ tabId: string; head: number } | null>(null);
   useEffect(() => {
-    if (!bar) return;
-    for (const o of pending) {
-      if (bar.low <= o.entryPrice && o.entryPrice <= bar.high) fillPending(activeTabId, o.id, head);
-    }
-    for (const p of positions) {
-      if (p.side === 'long') {
-        if (p.sl != null && bar.low <= p.sl) close(activeTabId, p.id, p.sl, head, 'sl');
-        else if (p.tp != null && bar.high >= p.tp) close(activeTabId, p.id, p.tp, head, 'tp');
-      } else {
-        if (p.sl != null && bar.high >= p.sl) close(activeTabId, p.id, p.sl, head, 'sl');
-        else if (p.tp != null && bar.low <= p.tp) close(activeTabId, p.id, p.tp, head, 'tp');
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bar?.timestamp, positions, pending, activeTabId, head]);
+    const prev = prevRef.current;
+    prevRef.current = { tabId: activeTabId, head };
+    if (!prev || prev.tabId !== activeTabId || head <= prev.head) return;
+    let cancelled = false;
+    getRange(symbol, 'm1', prev.head + 1, head)
+      .then((bars) => {
+        if (!cancelled && bars.length) useTradingStore.getState().settle(activeTabId, bars);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [head, activeTabId, symbol]);
 
   // Risk-% sizing: lots so that hitting SL loses `risk%` of balance.
   const applyRisk = (value: string) => {
