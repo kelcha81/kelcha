@@ -139,7 +139,7 @@ export function TradingPanel() {
   );
 
   return (
-    <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-slate-800 bg-slate-950/60 p-3 text-slate-200">
+    <div className="flex h-full w-full min-w-0 flex-col gap-3 overflow-y-auto border-l border-slate-800 bg-slate-950/60 p-3 text-slate-200">
       <div className="flex items-baseline justify-between">
         <div className="text-sm font-semibold">Paper Trading</div>
         <div className="font-mono text-sm tabular-nums">{price == null ? '—' : fmtPrice(price)}</div>

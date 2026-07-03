@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { MousePointer2, Trash2, Star, ChevronRight, Magnet, Pin, Lock, LockOpen, Eye, EyeOff } from 'lucide-react';
+import { MousePointer2, Trash2, Star, ChevronRight, ChevronLeft, Magnet, Pin, Lock, LockOpen, Eye, EyeOff } from 'lucide-react';
 import { useChartStore, useActiveChart } from '@/store/chartStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useDrawingsStore } from '@/store/drawingsStore';
@@ -44,6 +44,7 @@ export function DrawingToolbar() {
   const setHideAll = useToolbarStore((s) => s.setHideAll);
 
   const [openGroup, setOpenGroup] = useState<ToolGroup | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const paneKey = activePaneId ? `${activeTabId}:${activePaneId}` : null;
 
   // The overlay currently being drawn (so Esc / re-arm can cancel it cleanly).
@@ -156,8 +157,33 @@ export function DrawingToolbar() {
 
   const favTools = favorites.map(toolById).filter((t): t is ToolDef => !!t);
 
+  if (collapsed) {
+    return (
+      <div className="flex w-4 flex-col items-center border-r border-slate-800 bg-slate-900/60 py-2">
+        <button
+          type="button"
+          aria-label="Expand drawing toolbar"
+          title="Expand drawing toolbar"
+          onClick={() => setCollapsed(false)}
+          className="rounded text-slate-400 hover:bg-slate-800 hover:text-white"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex w-11 flex-col items-center gap-1 overflow-y-auto border-r border-slate-800 bg-slate-900/60 py-2">
+      <button
+        type="button"
+        aria-label="Collapse drawing toolbar"
+        title="Collapse drawing toolbar"
+        onClick={() => setCollapsed(true)}
+        className="rounded text-slate-500 hover:bg-slate-800 hover:text-white"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
       <Tooltip label="Cursor">
         <button type="button" onClick={cancelDrawing} className={btnCls(activeTool === null)}>
           <MousePointer2 className="h-4 w-4" />

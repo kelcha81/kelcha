@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Plus, Play, Trash2 } from 'lucide-react';
+import { Plus, Play, Trash2, Copy, Search } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTradingStore, DEFAULT_ACCOUNT } from '@/store/tradingStore';
 import { computeStats } from '@/lib/performance';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { confirm } from '@/components/ui/confirm';
+import { Tooltip } from '@/components/ui/tooltip';
 
 const fmtDate = (ts?: number) => (ts ? new Date(ts).toISOString().slice(0, 10) : '—');
 const money = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2);
@@ -22,20 +23,35 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
 }
 
 /** Landing dashboard: aggregate performance + the list of backtesting sessions. */
+type SortKey = 'recent' | 'name' | 'pnl';
+
 export function HomeDashboard() {
   const tabs = useWorkspaceStore((s) => s.tabs);
   const openSession = useWorkspaceStore((s) => s.openSession);
   const closeTab = useWorkspaceStore((s) => s.closeTab);
+  const duplicateTab = useWorkspaceStore((s) => s.duplicateTab);
   const allTrades = useTradingStore((s) => s.trades);
   const accounts = useTradingStore((s) => s.accounts);
   const [newOpen, setNewOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('recent');
 
-  const sessions = tabs.map((t) => {
-    const trades = allTrades[t.id] ?? [];
-    const stats = computeStats(trades, (accounts[t.id] ?? DEFAULT_ACCOUNT).balance);
-    const wins = trades.filter((x) => x.pnl > 0).length;
-    return { tab: t, trades, stats, wins };
-  });
+  const sessions = tabs
+    .map((t) => {
+      const trades = allTrades[t.id] ?? [];
+      const stats = computeStats(trades, (accounts[t.id] ?? DEFAULT_ACCOUNT).balance);
+      const wins = trades.filter((x) => x.pnl > 0).length;
+      return { tab: t, trades, stats, wins };
+    })
+    .filter(({ tab }) => {
+      const q = query.trim().toLowerCase();
+      return !q || tab.label.toLowerCase().includes(q) || tab.symbol.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      if (sort === 'name') return a.tab.label.localeCompare(b.tab.label);
+      if (sort === 'pnl') return b.stats.totalPnl - a.stats.totalPnl;
+      return (b.tab.lastOpenedAt ?? 0) - (a.tab.lastOpenedAt ?? 0);
+    });
 
   const totalPnl = sessions.reduce((a, s) => a + s.stats.totalPnl, 0);
   const totalTrades = sessions.reduce((a, s) => a + s.stats.trades, 0);
@@ -49,13 +65,35 @@ export function HomeDashboard() {
           <h1 className="text-xl font-semibold">Backtesting Dashboard</h1>
           <p className="text-sm text-slate-400">Your replay sessions and performance.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setNewOpen(true)}
-          className="flex items-center gap-1 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
-        >
-          <Plus className="h-4 w-4" /> New session
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search sessions…"
+              className="w-44 rounded border border-slate-700 bg-slate-800 py-1.5 pl-7 pr-2 text-sm text-slate-100"
+            />
+          </div>
+          <select
+            aria-label="Sort sessions"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+          >
+            <option value="recent">Recent</option>
+            <option value="name">Name</option>
+            <option value="pnl">P&L</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setNewOpen(true)}
+            className="flex items-center gap-1 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          >
+            <Plus className="h-4 w-4" /> New session
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -84,32 +122,47 @@ export function HomeDashboard() {
                     {fmtDate(tab.start)} → {fmtDate(tab.end)}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (
-                      await confirm({
-                        title: `Delete session "${tab.label}"?`,
-                        body: 'This permanently removes the session, its trades and its stats.',
-                        danger: true,
-                        confirmLabel: 'Delete'
-                      })
-                    )
-                      closeTab(tab.id);
-                  }}
-                  title="Delete session"
-                  aria-label="Delete session"
-                  className="rounded p-1 text-slate-400 transition hover:bg-slate-800 hover:text-red-400"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center">
+                  <Tooltip label="Duplicate session (layout + drawings, fresh blotter)">
+                    <button
+                      type="button"
+                      onClick={() => duplicateTab(tab.id)}
+                      aria-label="Duplicate session"
+                      className="rounded p-1 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </Tooltip>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: `Delete session "${tab.label}"?`,
+                          body: 'This permanently removes the session, its trades and its stats.',
+                          danger: true,
+                          confirmLabel: 'Delete'
+                        })
+                      )
+                        closeTab(tab.id);
+                    }}
+                    title="Delete session"
+                    aria-label="Delete session"
+                    className="rounded p-1 text-slate-400 transition hover:bg-slate-800 hover:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                 {cell('P&L', money(stats.totalPnl), `font-mono ${col(stats.totalPnl)}`)}
                 {cell('Trades', String(stats.trades), 'font-mono')}
                 {cell('Win', `${(stats.winRate * 100).toFixed(0)}%`, 'font-mono')}
               </div>
-              <div className="mt-2 text-[11px] text-slate-500">Head at {fmtDate(tab.savedHead)}</div>
+              <div className="mt-2 flex justify-between text-[11px] text-slate-500">
+                <span>Head at {fmtDate(tab.savedHead)}</span>
+                {tab.lastOpenedAt && <span>Opened {fmtDate(tab.lastOpenedAt)}</span>}
+              </div>
               <button
                 type="button"
                 onClick={() => openSession(tab.id)}

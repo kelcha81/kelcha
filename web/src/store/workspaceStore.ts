@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useReplayStore } from '@/store/replayStore';
+import { useDrawingsStore } from '@/store/drawingsStore';
 import { defaultLayout, makePanes, type LayoutCount, type PaneChartType, type TabLayout } from '@/lib/layout';
 import type { Timeframe } from '@/store/replayStore';
 
@@ -13,6 +14,7 @@ export interface Tab {
   savedHead?: number; // replay head when last left, restored on return
   start?: number; // session window start (Unix ms); default = data start
   end?: number; // session window end (Unix ms); default = data end
+  lastOpenedAt?: number; // for Home dashboard recency sort
 }
 
 interface WorkspaceState {
@@ -30,6 +32,10 @@ interface WorkspaceState {
   openSession: (id: string) => void;
   /** Return to the Home dashboard (session manager). */
   goHome: () => void;
+  /** Clone a session: layout, window, head and drawings (not trades). */
+  duplicateTab: (id: string) => void;
+  /** Close every session except `id`. */
+  closeOthers: (id: string) => void;
   /** Replace the whole workspace (on load from Firestore). */
   hydrate: (tabs: Tab[], activeTabId: string) => void;
   /** Reset to a single default tab (on sign-out / account switch). */
@@ -61,7 +67,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
           const id = `tab-${tab.symbol}-${Date.now()}`;
           const tabs = saveHead(s.tabs, s.activeTabId);
           // Creating a session opens it (leaves the Home dashboard).
-          return { tabs: [...tabs, { ...tab, id, layout: defaultLayout() }], activeTabId: id, view: 'session' };
+          return {
+            tabs: [...tabs, { ...tab, id, layout: defaultLayout(), lastOpenedAt: Date.now() }],
+            activeTabId: id,
+            view: 'session'
+          };
         }),
 
       closeTab: (id) =>
@@ -114,12 +124,43 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 
       openSession: (id) =>
         set((s) => ({
-          tabs: id === s.activeTabId ? s.tabs : saveHead(s.tabs, s.activeTabId),
+          tabs: (id === s.activeTabId ? s.tabs : saveHead(s.tabs, s.activeTabId)).map((t) =>
+            t.id === id ? { ...t, lastOpenedAt: Date.now() } : t
+          ),
           activeTabId: id,
           view: 'session'
         })),
 
       goHome: () => set((s) => ({ tabs: saveHead(s.tabs, s.activeTabId), view: 'home' })),
+
+      duplicateTab: (id) =>
+        set((s) => {
+          const src = s.tabs.find((t) => t.id === id);
+          if (!src) return s;
+          const newId = `tab-${src.symbol}-${Date.now()}`;
+          const copy: Tab = {
+            ...src,
+            id: newId,
+            label: `${src.label} copy`,
+            layout: { count: src.layout.count, panes: src.layout.panes.map((p) => ({ ...p })) },
+            lastOpenedAt: Date.now()
+          };
+          // Clone the drawings pane-by-pane (trades stay with the original —
+          // a duplicated session starts a fresh blotter).
+          const d = useDrawingsStore.getState();
+          for (const p of src.layout.panes) {
+            for (const o of d.drawings[`${id}:${p.id}`] ?? []) {
+              d.upsert(`${newId}:${p.id}`, { ...o, points: o.points.map((pt) => ({ ...pt })) });
+            }
+          }
+          return { tabs: [...saveHead(s.tabs, s.activeTabId), copy], activeTabId: newId, view: 'session' };
+        }),
+
+      closeOthers: (id) =>
+        set((s) => {
+          const keep = s.tabs.filter((t) => t.id === id);
+          return keep.length ? { tabs: keep, activeTabId: id } : s;
+        }),
 
       hydrate: (tabs, activeTabId) =>
         set({

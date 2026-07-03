@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useActiveTab, useWorkspaceStore } from '@/store/workspaceStore';
 import { useChartStore } from '@/store/chartStore';
 import { useBacktestStore } from '@/store/backtestStore';
@@ -100,6 +102,8 @@ function PaneView({ tabId, pane, symbol }: { tabId: string; pane: Pane; symbol: 
 export function Dashboard() {
   const tab = useActiveTab();
   const { count, panes } = tab.layout;
+  const rightPanelRef = useRef<ImperativePanelHandle>(null);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
 
   // Restore persisted backtest results (per tab) after a full reload.
   useEffect(() => {
@@ -117,12 +121,42 @@ export function Dashboard() {
     []
   );
 
-  const gridCls =
-    count === 1
-      ? 'grid-cols-1 grid-rows-1'
-      : count === 2
-        ? 'grid-cols-2 grid-rows-1'
-        : 'grid-cols-2 grid-rows-2';
+  // Draggable chart splits (react-resizable-panels). Sizes persist per tab +
+  // layout via autoSaveId (localStorage — splits are screen-dependent, so
+  // they're deliberately device-local rather than Firestore-synced).
+  const pane = (i: number) =>
+    panes[i] ? <PaneView key={panes[i].id} tabId={tab.id} pane={panes[i]} symbol={tab.symbol} /> : null;
+  const hHandle = <PanelResizeHandle className="w-1 rounded bg-slate-800 transition-colors hover:bg-blue-600 data-[resize-handle-state=drag]:bg-blue-600" />;
+  const vHandle = <PanelResizeHandle className="h-1 rounded bg-slate-800 transition-colors hover:bg-blue-600 data-[resize-handle-state=drag]:bg-blue-600" />;
+
+  const grid =
+    count === 1 ? (
+      pane(0)
+    ) : count === 2 ? (
+      <PanelGroup direction="horizontal" autoSaveId={`kelcha-grid2-${tab.id}`}>
+        <Panel minSize={15} className="min-w-0">{pane(0)}</Panel>
+        {hHandle}
+        <Panel minSize={15} className="min-w-0">{pane(1)}</Panel>
+      </PanelGroup>
+    ) : (
+      <PanelGroup direction="vertical" autoSaveId={`kelcha-grid4-${tab.id}`}>
+        <Panel minSize={15} className="min-h-0">
+          <PanelGroup direction="horizontal" autoSaveId={`kelcha-grid4-top-${tab.id}`}>
+            <Panel minSize={15} className="min-w-0">{pane(0)}</Panel>
+            {hHandle}
+            <Panel minSize={15} className="min-w-0">{pane(1)}</Panel>
+          </PanelGroup>
+        </Panel>
+        {vHandle}
+        <Panel minSize={15} className="min-h-0">
+          <PanelGroup direction="horizontal" autoSaveId={`kelcha-grid4-bottom-${tab.id}`}>
+            <Panel minSize={15} className="min-w-0">{pane(2)}</Panel>
+            {hHandle}
+            <Panel minSize={15} className="min-w-0">{pane(3)}</Panel>
+          </PanelGroup>
+        </Panel>
+      </PanelGroup>
+    );
 
   return (
     <div className="flex h-screen flex-col bg-[#0b0f14] text-slate-100">
@@ -131,12 +165,39 @@ export function Dashboard() {
 
       <div className="flex min-h-0 flex-1">
         <DrawingToolbar />
-        <div className={`grid min-h-0 min-w-0 flex-1 gap-2 p-2 ${gridCls}`}>
-          {panes.map((p) => (
-            <PaneView key={p.id} tabId={tab.id} pane={p} symbol={tab.symbol} />
-          ))}
-        </div>
-        <TradingPanel />
+        <PanelGroup direction="horizontal" autoSaveId="kelcha-shell">
+          <Panel defaultSize={78} minSize={40} className="min-w-0 p-2">
+            {grid}
+          </Panel>
+          <PanelResizeHandle className="relative w-1 bg-slate-800 transition-colors hover:bg-blue-600 data-[resize-handle-state=drag]:bg-blue-600">
+            <button
+              type="button"
+              aria-label={rightCollapsed ? 'Expand trading panel' : 'Collapse trading panel'}
+              title={rightCollapsed ? 'Expand trading panel' : 'Collapse trading panel'}
+              onClick={() => {
+                const p = rightPanelRef.current;
+                if (!p) return;
+                if (p.isCollapsed()) p.expand();
+                else p.collapse();
+              }}
+              className="absolute -left-2 top-1/2 z-10 flex h-10 w-5 -translate-y-1/2 items-center justify-center rounded border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+            >
+              {rightCollapsed ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </button>
+          </PanelResizeHandle>
+          <Panel
+            ref={rightPanelRef}
+            defaultSize={22}
+            minSize={14}
+            collapsible
+            collapsedSize={0}
+            onCollapse={() => setRightCollapsed(true)}
+            onExpand={() => setRightCollapsed(false)}
+            className="min-w-0"
+          >
+            <TradingPanel />
+          </Panel>
+        </PanelGroup>
       </div>
 
       <div className="flex items-center gap-4 border-t border-slate-800 bg-slate-900/60 px-3 py-2">
