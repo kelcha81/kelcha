@@ -16,16 +16,20 @@ interface ChartState {
   charts: Record<string, PaneChart>;
   activePaneId: string | null;
   activeTool: string | null;
+  /** One-shot "Jump" seek mode (hotkey J): the next chart click moves the replay head. */
+  jumpMode: boolean;
   registerChart: (paneId: string, chart: Chart, container: HTMLElement) => void;
   unregisterChart: (paneId: string) => void;
   setActivePane: (paneId: string) => void;
   setActiveTool: (tool: string | null) => void;
+  setJumpMode: (on: boolean) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
   charts: {},
   activePaneId: null,
   activeTool: null,
+  jumpMode: false,
 
   registerChart: (paneId, chart, container) =>
     set((s) => ({
@@ -43,7 +47,8 @@ export const useChartStore = create<ChartState>((set) => ({
     }),
 
   setActivePane: (paneId) => set({ activePaneId: paneId }),
-  setActiveTool: (tool) => set({ activeTool: tool })
+  setActiveTool: (tool) => set({ activeTool: tool }),
+  setJumpMode: (on) => set({ jumpMode: on })
 }));
 
 /** The focused pane's chart instance (for the drawing rail / toolbar actions). */

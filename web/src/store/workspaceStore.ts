@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useReplayStore } from '@/store/replayStore';
-import { defaultLayout, makePanes, type LayoutCount, type TabLayout } from '@/lib/layout';
+import { defaultLayout, makePanes, type LayoutCount, type PaneChartType, type TabLayout } from '@/lib/layout';
 import type { Timeframe } from '@/store/replayStore';
 
 /** A workspace tab = one symbol, with its OWN layout and replay-head position. */
@@ -25,6 +25,7 @@ interface WorkspaceState {
   renameTab: (id: string, label: string) => void;
   setActiveCount: (count: LayoutCount) => void;
   setActivePaneTimeframe: (paneId: string, tf: Timeframe) => void;
+  setActivePaneChartType: (paneId: string, chartType: PaneChartType) => void;
   /** Open a session (from the Home dashboard) and switch to the trading view. */
   openSession: (id: string) => void;
   /** Return to the Home dashboard (session manager). */
@@ -96,6 +97,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
             layout: {
               ...t.layout,
               panes: t.layout.panes.map((p) => (p.id === paneId ? { ...p, timeframe: tf } : p))
+            }
+          }))
+        })),
+
+      setActivePaneChartType: (paneId, chartType) =>
+        set((s) => ({
+          tabs: updateActive(s.tabs, s.activeTabId, (t) => ({
+            ...t,
+            layout: {
+              ...t.layout,
+              panes: t.layout.panes.map((p) => (p.id === paneId ? { ...p, chartType } : p))
             }
           }))
         })),

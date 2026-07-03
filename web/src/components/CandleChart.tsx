@@ -6,9 +6,9 @@ import type { Candle, Timeframe } from '@/store/replayStore';
 import { useReplayStore } from '@/store/replayStore';
 import { useActiveTab } from '@/store/workspaceStore';
 import { getSymbolInfo } from '@/lib/symbols';
+import type { PaneChartType } from '@/lib/layout';
 import { useChartStore } from '@/store/chartStore';
 import { useOrderToolStore } from '@/store/orderToolStore';
-import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useSettingsStore, type ChartTheme } from '@/store/settingsStore';
 import { getCanvasFont } from '@/lib/fonts';
 import { restoreOverlays } from '@/lib/overlays';
@@ -69,15 +69,18 @@ function buildStyles(t: ChartTheme) {
 export function CandleChart({
   tabId,
   paneId,
-  timeframe
+  timeframe,
+  chartType = 'candle_solid'
 }: {
   tabId: string;
   paneId: string;
   timeframe: Timeframe;
+  chartType?: PaneChartType;
 }) {
   const { symbol } = useActiveTab();
   const { pricePrecision } = getSymbolInfo(symbol);
   const theme = useSettingsStore((s) => s.theme);
+  const jumpMode = useChartStore((s) => s.jumpMode);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
   const prevLenRef = useRef(0);
@@ -106,10 +109,11 @@ export function CandleChart({
     const ro = new ResizeObserver(() => chart?.resize());
     ro.observe(el);
 
-    // Click-to-seek: map the click position to a candle timestamp and move the
-    // replay head there. Skipped while a drawing tool is active so it doesn't
-    // hijack the clicks used to draw.
-    const onSeekClick = (ev: MouseEvent) => {
+    // Chart clicks: focus the pane; set an armed order-ticket level pick; and
+    // seek ONLY deliberately — Ctrl/Cmd+Click or one-shot Jump mode (J) —
+    // never on a bare click (too easy to move the head by accident).
+    // Right-clicks are handled by ChartContextMenu (Radix) wrapping the pane.
+    const onChartClick = (ev: MouseEvent) => {
       useChartStore.getState().setActivePane(paneId);
       const rect = el.getBoundingClientRect();
       const res = chart?.convertFromPixel(
@@ -131,28 +135,20 @@ export function CandleChart({
       // Drawing tool active -> let it handle the click (no seek).
       if (useChartStore.getState().activeTool) return;
 
+      const cs = useChartStore.getState();
+      const wantsSeek = ev.ctrlKey || ev.metaKey || cs.jumpMode;
+      if (!wantsSeek) return;
       const ts = point?.timestamp;
-      if (typeof ts === 'number') useReplayStore.getState().setTimestamp(ts);
+      if (typeof ts === 'number') {
+        useReplayStore.getState().setTimestamp(ts);
+        if (cs.jumpMode) cs.setJumpMode(false); // one-shot
+      }
     };
-    el.addEventListener('click', onSeekClick);
-
-    // Right-click → context menu for the currently-selected overlay. KLineChart's
-    // own onRightClick only fires when you hit an overlay's thin line exactly, so
-    // this DOM handler (select the overlay, then right-click anywhere) is reliable.
-    const onContextMenu = (ev: MouseEvent) => {
-      const sel = useOverlayMenuStore.getState().selected;
-      if (!sel) return;
-      const ov = sel.chart.getOverlayById(sel.id);
-      if (!ov) return;
-      ev.preventDefault();
-      useOverlayMenuStore.getState().openMenu({ chart: sel.chart, overlay: ov, paneKey: sel.paneKey });
-    };
-    el.addEventListener('contextmenu', onContextMenu, true);
+    el.addEventListener('click', onChartClick);
 
     return () => {
       ro.disconnect();
-      el.removeEventListener('click', onSeekClick);
-      el.removeEventListener('contextmenu', onContextMenu, true);
+      el.removeEventListener('click', onChartClick);
       useChartStore.getState().unregisterChart(paneId);
       dispose(el);
       chartRef.current = null;
@@ -163,6 +159,12 @@ export function CandleChart({
   useEffect(() => {
     chartRef.current?.setStyles(buildStyles(theme));
   }, [theme]);
+
+  // Candle render style per pane (solid / hollow / OHLC bars / area) — a style
+  // patch, so switching never remounts or reloads data.
+  useEffect(() => {
+    chartRef.current?.setStyles({ candle: { type: chartType } } as never);
+  }, [chartType]);
 
   // Sync data on every tick / data change.
   useEffect(() => {
@@ -195,5 +197,12 @@ export function CandleChart({
     prevFirstTimeRef.current = firstTime;
   }, [candles]);
 
-  return <div ref={containerRef} className="relative h-full w-full" style={{ background: theme.background }} />;
+  return (
+    <div
+      ref={containerRef}
+      className={`relative h-full w-full ${jumpMode ? 'cursor-crosshair' : ''}`}
+      title={jumpMode ? 'Jump mode: click to move the replay head' : undefined}
+      style={{ background: theme.background }}
+    />
+  );
 }

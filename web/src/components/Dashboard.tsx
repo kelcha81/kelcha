@@ -4,8 +4,12 @@ import { useEffect } from 'react';
 import { useActiveTab, useWorkspaceStore } from '@/store/workspaceStore';
 import { useChartStore } from '@/store/chartStore';
 import { useBacktestStore } from '@/store/backtestStore';
-import type { Pane } from '@/lib/layout';
+import { CHART_TYPES, type Pane, type PaneChartType } from '@/lib/layout';
 import type { Timeframe } from '@/store/replayStore';
+import { getSymbolInfo } from '@/lib/symbols';
+import { registerHotkey } from '@/lib/hotkeys';
+import { OhlcLegend } from '@/components/OhlcLegend';
+import { ChartContextMenu } from '@/components/ChartContextMenu';
 import { TabBar } from '@/components/TabBar';
 import { TopToolbar } from '@/components/TopToolbar';
 import { DrawingToolbar } from '@/components/DrawingToolbar';
@@ -31,11 +35,13 @@ const TF_OPTIONS: { tf: Timeframe; name: string }[] = [
   { tf: 'mo1', name: '1M' }
 ];
 
-function PaneView({ tabId, pane }: { tabId: string; pane: Pane }) {
+function PaneView({ tabId, pane, symbol }: { tabId: string; pane: Pane; symbol: string }) {
   const activePaneId = useChartStore((s) => s.activePaneId);
   const setActivePane = useChartStore((s) => s.setActivePane);
   const setActivePaneTimeframe = useWorkspaceStore((s) => s.setActivePaneTimeframe);
+  const setActivePaneChartType = useWorkspaceStore((s) => s.setActivePaneChartType);
   const active = activePaneId === pane.id;
+  const { pricePrecision } = getSymbolInfo(symbol);
 
   return (
     <div
@@ -57,15 +63,29 @@ function PaneView({ tabId, pane }: { tabId: string; pane: Pane }) {
             </option>
           ))}
         </select>
+        <select
+          aria-label="Pane chart type"
+          value={pane.chartType ?? 'candle_solid'}
+          onChange={(e) => setActivePaneChartType(pane.id, e.target.value as PaneChartType)}
+          className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          {CHART_TYPES.map((o) => (
+            <option key={o.type} value={o.type}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
-      <div className="relative min-h-0 flex-1">
+      <ChartContextMenu tabId={tabId} paneId={pane.id} symbol={symbol}>
+        <OhlcLegend paneId={pane.id} symbol={symbol} timeframe={pane.timeframe} pricePrecision={pricePrecision} />
         <CandleChart
           key={`${tabId}:${pane.id}:${pane.timeframe}`}
           tabId={tabId}
           paneId={pane.id}
           timeframe={pane.timeframe}
+          chartType={pane.chartType}
         />
-      </div>
+      </ChartContextMenu>
     </div>
   );
 }
@@ -85,6 +105,17 @@ export function Dashboard() {
     void useBacktestStore.getState().hydrate();
   }, []);
 
+  // J arms one-shot Jump mode: the next chart click moves the replay head
+  // (bare clicks never seek; Ctrl/Cmd+Click always works too).
+  useEffect(
+    () =>
+      registerHotkey('j', 'Jump mode (next click moves the replay head)', 'Replay', () => {
+        const cs = useChartStore.getState();
+        cs.setJumpMode(!cs.jumpMode);
+      }),
+    []
+  );
+
   const gridCls =
     count === 1
       ? 'grid-cols-1 grid-rows-1'
@@ -101,7 +132,7 @@ export function Dashboard() {
         <DrawingToolbar />
         <div className={`grid min-h-0 min-w-0 flex-1 gap-2 p-2 ${gridCls}`}>
           {panes.map((p) => (
-            <PaneView key={p.id} tabId={tab.id} pane={p} />
+            <PaneView key={p.id} tabId={tab.id} pane={p} symbol={tab.symbol} />
           ))}
         </div>
         <TradingPanel />
