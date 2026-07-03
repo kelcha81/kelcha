@@ -17,8 +17,6 @@ import {
 import { useOrderToolStore, type OrderField } from '@/store/orderToolStore';
 import { exportTradesCSV, exportTradesJSON } from '@/lib/exportTrades';
 import { getSymbolInfo } from '@/lib/symbols';
-import { useChartStore } from '@/store/chartStore';
-import { POSITION_TOOL } from '@/lib/overlays/positionTool';
 import { PerformanceReport } from '@/components/PerformanceReport';
 import { BacktestResults } from '@/components/BacktestResults';
 import { confirm } from '@/components/ui/confirm';
@@ -106,10 +104,6 @@ export function TradingPanel() {
       openPos(activeTabId, { ...common, entryPrice: price, entryTime: head });
     }
     resetOrder();
-    // Clear any position-tool boxes now that the order is committed.
-    for (const { chart } of Object.values(useChartStore.getState().charts)) {
-      chart.removeOverlay({ name: POSITION_TOOL });
-    }
   };
 
   const fmtPrice = (n: number) => n.toFixed(precision);

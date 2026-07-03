@@ -16,7 +16,7 @@ import {
   ArrowUpRight,
   MessageSquare,
   Spline,
-  Briefcase,
+  Target,
   PencilRuler,
   type LucideIcon
 } from 'lucide-react';
@@ -72,8 +72,9 @@ export const TOOLS: ToolDef[] = [
   { id: 'text', label: 'Text note', group: 'Annotations', overlay: TEXT_NOTE, Icon: Type },
   { id: 'callout', label: 'Callout', group: 'Annotations', overlay: CALLOUT, Icon: MessageSquare },
   { id: 'priceLabel', label: 'Price label', group: 'Annotations', overlay: PRICE_TAG, Icon: Tag },
-  // Position (a persisted drawing — distinct from the order-composer tool)
-  { id: 'position', label: 'Long/Short position', group: 'Position', overlay: POSITION_DRAWING, Icon: Briefcase },
+  // Position: THE long/short R:R tool — a persisted drawing; right-click →
+  // "Apply to order ticket" loads its levels into the trading panel.
+  { id: 'position', label: 'Long/Short position', group: 'Position', overlay: POSITION_DRAWING, Icon: Target },
   // Measure
   { id: 'measure', label: 'Measure', group: 'Measure', overlay: MEASURE, Icon: PencilRuler, shortcut: 'shift+m', ephemeral: true }
 ];

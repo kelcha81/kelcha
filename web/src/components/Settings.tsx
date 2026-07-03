@@ -79,10 +79,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {/* Journal target */}
+          {/* Journal target — the tabs below show only the selected target's settings. */}
           <section className="space-y-2">
             <div className="text-xs font-semibold uppercase text-slate-400">Journaling target</div>
-            <div className="text-[11px] text-slate-500">Where your Journal + Forecast notes are written.</div>
+            <div className="text-[11px] text-slate-500">
+              Where your Journal + Forecast notes are written. Each target has its own settings below.
+            </div>
             <div className="flex w-fit rounded border border-slate-700 text-xs">
               {(['obsidian', 'notion'] as const).map((t) => (
                 <button
@@ -97,7 +99,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </div>
           </section>
 
-          {/* Obsidian */}
+          {/* Obsidian settings (only for the Obsidian target) */}
+          {cfg.journalTarget === 'obsidian' && (
           <section className="space-y-2 rounded border border-slate-800 p-3">
             <div className="text-xs font-semibold text-slate-300">Obsidian vault</div>
             <div className="flex items-center gap-2">
@@ -132,8 +135,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </label>
             </div>
           </section>
+          )}
 
-          {/* Notion */}
+          {/* Notion settings (only for the Notion target) */}
+          {cfg.journalTarget === 'notion' && (
           <section className="space-y-2 rounded border border-slate-800 p-3">
             <div className="text-xs font-semibold text-slate-300">Notion</div>
             {status?.connected ? (
@@ -181,6 +186,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </>
             )}
           </section>
+          )}
 
           {msg && (
             <div className={`rounded border p-2 text-xs ${msg.ok ? 'border-emerald-900/60 bg-emerald-950/30 text-emerald-300' : 'border-red-900/60 bg-red-950/30 text-red-300'}`}>

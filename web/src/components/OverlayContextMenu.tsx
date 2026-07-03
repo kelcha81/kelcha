@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState, type ComponentType } from 'react';
-import { Settings, Copy, Lock, Unlock, Trash2, Star } from 'lucide-react';
+import { Settings, Copy, Lock, Unlock, Trash2, Star, Target } from 'lucide-react';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useDrawingsStore } from '@/store/drawingsStore';
 import { useDrawingDefaultsStore } from '@/store/drawingDefaultsStore';
+import { useOrderToolStore } from '@/store/orderToolStore';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { TEXT_NOTE } from '@/lib/overlays/textNote';
 import { CALLOUT } from '@/lib/overlays/callout';
 import { FIB_TOOL, DEFAULT_FIB_RATIOS, fibRatios } from '@/lib/overlays/fibTool';
 import { FIB_EXTENSION, DEFAULT_EXT_RATIOS } from '@/lib/overlays/fibExtension';
+import { POSITION_DRAWING } from '@/lib/overlays/positionDrawing';
 
 const COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7', '#ffffff', '#64748b'];
 const WIDTHS = [1, 2, 3];
@@ -145,6 +147,19 @@ export function OverlayContextMenu() {
     close();
   };
 
+  // Load a position drawing's entry/stop/target into the order ticket, so
+  // the panel's Buy/Sell commits it (explicit — replaces the old implicit
+  // order-composer position tool).
+  const applyToTicket = () => {
+    const live = chart.getOverlayById(overlay.id) ?? overlay;
+    const tool = useOrderToolStore.getState();
+    const [entry, sl, tp] = live.points;
+    if (entry?.value != null) tool.setValue('entry', entry.value);
+    if (sl?.value != null) tool.setValue('sl', sl.value);
+    if (tp?.value != null) tool.setValue('tp', tp.value);
+    close();
+  };
+
   const clone = () => {
     chart.createOverlay({ name: overlay.name, points: overlay.points });
     close();
@@ -235,6 +250,7 @@ export function OverlayContextMenu() {
           )}
         </div>
       )}
+      {overlay.name === POSITION_DRAWING && <Item icon={Target} label="Apply to order ticket" onClick={applyToTicket} />}
       <Item icon={Star} label="Set as default for tool" onClick={setAsDefault} />
       <Item icon={Copy} label="Clone" onClick={clone} />
       <Item icon={overlay.lock ? Unlock : Lock} label={overlay.lock ? 'Unlock' : 'Lock'} onClick={toggleLock} />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { MousePointer2, Target, Trash2, Star, ChevronRight, Magnet, Pin, Lock, LockOpen, Eye, EyeOff } from 'lucide-react';
+import { MousePointer2, Trash2, Star, ChevronRight, Magnet, Pin, Lock, LockOpen, Eye, EyeOff } from 'lucide-react';
 import { useChartStore, useActiveChart } from '@/store/chartStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useDrawingsStore } from '@/store/drawingsStore';
@@ -9,9 +9,6 @@ import { useToolbarStore } from '@/store/toolbarStore';
 import { useDrawingDefaultsStore } from '@/store/drawingDefaultsStore';
 import { createPersistentOverlay, magnetToMode, overrideSavedOverlays } from '@/lib/overlays';
 import { TOOLS, TOOL_GROUPS, toolById, registerToolOverlays, type ToolDef, type ToolGroup } from '@/lib/tools/registry';
-import { registerPositionTool, POSITION_TOOL, syncPositionOrder } from '@/lib/overlays/positionTool';
-import { useOverlayMenuStore } from '@/store/overlayMenuStore';
-import { useOrderToolStore } from '@/store/orderToolStore';
 import { registerHotkey, comboLabel } from '@/lib/hotkeys';
 import { MenuPopover } from '@/components/ui/menu';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -54,7 +51,6 @@ export function DrawingToolbar() {
 
   useEffect(() => {
     registerToolOverlays();
-    registerPositionTool();
   }, []);
 
   const cancelDrawing = () => {
@@ -137,34 +133,6 @@ export function DrawingToolbar() {
     const next = !hideAll;
     setHideAll(next);
     overrideSavedOverlays(chartMap(), activeTabId, { visible: !next });
-  };
-
-  // The position tool isn't a persisted drawing — it writes its levels into the
-  // order composer so the panel's Buy/Sell commits it.
-  const startPosition = () => {
-    setActiveTool(POSITION_TOOL);
-    if (chart) {
-      chart.createOverlay({
-        name: POSITION_TOOL,
-        onRemoved: () => {
-          useOrderToolStore.getState().reset();
-          return false;
-        },
-        onDrawEnd: (event) => {
-          syncPositionOrder(event.overlay);
-          setTimeout(() => setActiveTool(null), 0);
-          return true;
-        },
-        onSelected: (event) => {
-          useOverlayMenuStore.getState().setSelected({ chart, id: event.overlay.id, paneKey: null });
-          return false;
-        },
-        onRightClick: (event) => {
-          useOverlayMenuStore.getState().openMenu({ chart, overlay: event.overlay, paneKey: null });
-          return true;
-        }
-      });
-    }
   };
 
   const clearAll = async () => {
@@ -283,14 +251,6 @@ export function DrawingToolbar() {
       <Tooltip label={`Keep drawing mode ${keepDrawing ? 'on' : 'off'} (tool stays armed)`}>
         <button type="button" onClick={toggleKeepDrawing} className={btnCls(keepDrawing)}>
           <Pin className="h-4 w-4" />
-        </button>
-      </Tooltip>
-
-      <div className="my-1 h-px w-6 bg-slate-700" />
-
-      <Tooltip label="Long/Short position (sets the order ticket)">
-        <button type="button" disabled={!chart} onClick={startPosition} className={btnCls(activeTool === POSITION_TOOL)}>
-          <Target className="h-4 w-4" />
         </button>
       </Tooltip>
 
