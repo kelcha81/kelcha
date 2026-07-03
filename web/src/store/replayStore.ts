@@ -58,6 +58,8 @@ export interface ReplayState {
   setTimestamp: (timestamp: number) => void;
   stepForward: () => void;
   stepBackward: () => void;
+  /** Step by N bars of the given bar duration (the focused pane's timeframe). */
+  stepBars: (n: number, barMs: number) => void;
   togglePlay: () => void;
   setPlaybackSpeed: (ms: number) => void;
   setStepSize: (ms: number) => void;
@@ -118,6 +120,15 @@ export const useReplayStore = create<ReplayState>((set) => ({
 
   /** Rewind one tick (stepSize ms), clamped to the start of the data. */
   stepBackward: () => set((s) => ({ currentTimestamp: clamp(s.currentTimestamp - s.stepSize, s.bounds) })),
+
+  /** Step ±N bars of the focused pane's timeframe (TradingView-style arrows).
+   *  Auto-pauses when a forward step lands on the session end. */
+  stepBars: (n, barMs) =>
+    set((s) => {
+      const next = clamp(s.currentTimestamp + n * barMs, s.bounds);
+      const atEnd = s.bounds != null && next === s.bounds.max;
+      return { currentTimestamp: next, isPlaying: atEnd && n > 0 ? false : s.isPlaying };
+    }),
 
   /** Flip play/pause. The interval driver lives in <PlaybackBar/>. */
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),

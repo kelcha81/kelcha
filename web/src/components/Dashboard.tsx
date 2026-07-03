@@ -12,6 +12,7 @@ import { OhlcLegend } from '@/components/OhlcLegend';
 import { ChartContextMenu } from '@/components/ChartContextMenu';
 import { TabBar } from '@/components/TabBar';
 import { TopToolbar } from '@/components/TopToolbar';
+import { TimelineScrubber } from '@/components/TimelineScrubber';
 import { DrawingToolbar } from '@/components/DrawingToolbar';
 import { CandleChart } from '@/components/CandleChart';
 import { PlaybackBar } from '@/components/PlaybackBar';
@@ -140,10 +141,9 @@ export function Dashboard() {
 
       <div className="flex items-center gap-4 border-t border-slate-800 bg-slate-900/60 px-3 py-2">
         <PlaybackBar />
+        <TimelineScrubber />
         <HeadClock />
-        <div className="ml-auto">
-          <DateJump />
-        </div>
+        <DateJump />
       </div>
 
       <ChartPluginsBridge />

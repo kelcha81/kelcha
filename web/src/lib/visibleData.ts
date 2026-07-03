@@ -98,6 +98,11 @@ function buildFormingCandle(
  *
  * Pure function: same inputs -> same output, no React.
  */
+// Per-series cache of the closed-bars slice: during playback the head moves
+// many times inside one period, so idx is unchanged and the (up to ~600-item)
+// slice can be reused instead of re-copied every tick on every pane.
+const closedCache = new WeakMap<Candle[], { idx: number; closed: Candle[] }>();
+
 export function buildVisibleData(
   fullData: FullData,
   currentTimestamp: number,
@@ -111,7 +116,9 @@ export function buildVisibleData(
   if (idx === 0) return []; // head is before the first candle
 
   const currentStart = series[idx - 1].timestamp;
-  const closed = series.slice(0, idx - 1); // every bar before the current period
+  const cached = closedCache.get(series);
+  const closed = cached && cached.idx === idx ? cached.closed : series.slice(0, idx - 1);
+  if (!cached || cached.idx !== idx) closedCache.set(series, { idx, closed });
 
   const forming = buildFormingCandle(fullData.m1 ?? [], currentStart, currentTimestamp);
   return forming ? [...closed, forming] : closed;
