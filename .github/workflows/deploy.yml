@@ -6,6 +6,10 @@
 #   GCP_WIF_PROVIDER (full projects/.../providers/... resource name),
 #   GCP_DEPLOY_SA   (deployer service account email)
 #
+# Each service runs as its OWN least-privilege runtime SA (derived from
+# GCP_PROJECT_ID, so no extra vars): web-run (Firestore + Firebase Auth + candles
+# RW), engine-run (Anthropic secret + candles RO), data-refresh-run (candles RW).
+#
 # Each service deploys only when its files change. The engine deploys first so
 # the web build can inline the engine's URL (NEXT_PUBLIC_ENGINE_URL).
 name: deploy
@@ -79,7 +83,7 @@ jobs:
           gcloud run deploy engine \
             --image "$IMAGE" \
             --region "$REGION" \
-            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --service-account "engine-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --allow-unauthenticated \
             --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest" \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }},readonly=true" \
@@ -124,7 +128,7 @@ jobs:
           gcloud run deploy web \
             --image "$IMAGE" \
             --region "$REGION" \
-            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --service-account "web-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --allow-unauthenticated \
             --execution-environment gen2 \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
@@ -160,7 +164,7 @@ jobs:
           gcloud run jobs deploy data-refresh \
             --image "$IMAGE" \
             --region "$REGION" \
-            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --service-account "data-refresh-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
             --set-env-vars "DUKASCOPY_CACHE_DIR=/app/public/data/_dukascache" \
