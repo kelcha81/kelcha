@@ -4,20 +4,40 @@ import { getSymbolInfo } from '@/lib/symbols';
 
 // A bounded Fibonacci retracement: 2 points (start → end). Levels are drawn ONLY
 // between the two points' x-range (not across the whole chart), like the
-// position tool. Each level shows its ratio + price.
+// position tool. Each level shows its ratio + price. Ratios are editable per
+// overlay via extendData.levels (context menu → Settings → Levels).
 
 const NAME = 'fibBounded';
 let registered = false;
 
-const LEVELS: { r: number; color: string }[] = [
-  { r: 0, color: '#787b86' },
-  { r: 0.236, color: '#f23645' },
-  { r: 0.382, color: '#ff9800' },
-  { r: 0.5, color: '#4caf50' },
-  { r: 0.618, color: '#089981' },
-  { r: 0.786, color: '#00bcd4' },
-  { r: 1, color: '#787b86' }
-];
+export const DEFAULT_FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+
+const RATIO_COLORS: Record<string, string> = {
+  '0': '#787b86',
+  '0.236': '#f23645',
+  '0.382': '#ff9800',
+  '0.5': '#4caf50',
+  '0.618': '#089981',
+  '0.786': '#00bcd4',
+  '1': '#787b86'
+};
+
+export function fibColor(r: number): string {
+  return RATIO_COLORS[String(r)] ?? '#9aa7b4';
+}
+
+/** The overlay's ratio list: extendData.levels (edited via the menu) or defaults. */
+export function fibRatios(extendData: unknown): number[] {
+  const levels = (extendData as { levels?: unknown } | undefined)?.levels;
+  return Array.isArray(levels) && levels.length > 0 && levels.every((n) => typeof n === 'number' && Number.isFinite(n))
+    ? (levels as number[])
+    : DEFAULT_FIB_RATIOS;
+}
+
+export function activePrecision(): number {
+  const ws = useWorkspaceStore.getState();
+  return getSymbolInfo(ws.tabs.find((t) => t.id === ws.activeTabId)?.symbol ?? 'eurusd').pricePrecision;
+}
 
 function figures({ overlay, coordinates }: OverlayCreateFiguresCallbackParams): OverlayFigure[] {
   if (coordinates.length < 2 || overlay.points.length < 2) return [];
@@ -27,11 +47,11 @@ function figures({ overlay, coordinates }: OverlayCreateFiguresCallbackParams): 
 
   const v0 = overlay.points[0].value ?? 0; // start (ratio 1)
   const v1 = overlay.points[1].value ?? 0; // end (ratio 0)
-  const ws = useWorkspaceStore.getState();
-  const prec = getSymbolInfo(ws.tabs.find((t) => t.id === ws.activeTabId)?.symbol ?? 'eurusd').pricePrecision;
+  const prec = activePrecision();
 
   const figs: OverlayFigure[] = [];
-  for (const { r, color } of LEVELS) {
+  for (const r of fibRatios(overlay.extendData)) {
+    const color = fibColor(r);
     const y = b.y + (a.y - b.y) * r;
     const price = v1 + (v0 - v1) * r;
     figs.push({ type: 'line', attrs: { coordinates: [{ x: left, y }, { x: right, y }] }, styles: { color, size: 1 } });

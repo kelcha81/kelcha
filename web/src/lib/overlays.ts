@@ -1,10 +1,18 @@
-import type { Chart, OverlayEvent } from 'klinecharts';
+import { OverlayMode, type Chart, type OverlayEvent } from 'klinecharts';
 import { useDrawingsStore, type SavedOverlay } from '@/store/drawingsStore';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
+import { useToolbarStore, type MagnetMode } from '@/store/toolbarStore';
 
 // Create a KLineChart overlay wired to persist itself: it saves its points on
 // draw/move end, removes itself from the store when removed, and removes on
 // right-click. Used both for new drawings and for restoring saved ones.
+
+/** Toolbar magnet setting → klinecharts overlay mode (native OHLC snapping). */
+export function magnetToMode(magnet: MagnetMode): OverlayMode {
+  if (magnet === 'weak') return OverlayMode.WeakMagnet;
+  if (magnet === 'strong') return OverlayMode.StrongMagnet;
+  return OverlayMode.Normal;
+}
 
 function persist(key: string) {
   return (e: OverlayEvent): boolean => {
@@ -29,6 +37,9 @@ export function createPersistentOverlay(
     id?: string;
     extendData?: Record<string, unknown>;
     styles?: Record<string, unknown>;
+    mode?: OverlayMode;
+    lock?: boolean;
+    visible?: boolean;
     onDone?: () => void;
   }
 ): string | null {
@@ -40,6 +51,9 @@ export function createPersistentOverlay(
     id: opts.id,
     extendData: opts.extendData,
     styles: opts.styles,
+    mode: opts.mode,
+    lock: opts.lock,
+    visible: opts.visible,
     onDrawEnd: (e) => {
       save(e);
       opts.onDone?.();
@@ -61,10 +75,42 @@ export function createPersistentOverlay(
   }) as string | null;
 }
 
-/** Re-create every saved overlay for `key` on a freshly mounted chart. */
+/**
+ * Re-create every saved overlay for `key` on a freshly mounted chart, applying
+ * the current toolbar drawing state (magnet mode, lock-all, hide-all). A
+ * drawing's own saved styles always win over tool defaults on restore.
+ */
 export function restoreOverlays(chart: Chart, key: string): void {
   const saved = useDrawingsStore.getState().drawings[key] ?? [];
+  const tb = useToolbarStore.getState();
   for (const o of saved) {
-    createPersistentOverlay(chart, key, { name: o.name, points: o.points, id: o.id, extendData: o.extendData, styles: o.styles });
+    createPersistentOverlay(chart, key, {
+      name: o.name,
+      points: o.points,
+      id: o.id,
+      extendData: o.extendData,
+      styles: o.styles,
+      mode: magnetToMode(tb.magnet),
+      lock: tb.lockAll || undefined,
+      visible: tb.hideAll ? false : undefined
+    });
+  }
+}
+
+/**
+ * Apply a patch (mode / lock / visible) to every SAVED overlay on the active
+ * tab's panes — used by the toolbar's magnet / lock-all / hide-all toggles.
+ * `charts` maps paneId -> Chart (from chartStore); keys are `${tabId}:${paneId}`.
+ */
+export function overrideSavedOverlays(
+  charts: Record<string, Chart>,
+  tabId: string,
+  patch: { mode?: OverlayMode; lock?: boolean; visible?: boolean }
+): void {
+  const drawings = useDrawingsStore.getState().drawings;
+  for (const [paneId, chart] of Object.entries(charts)) {
+    for (const o of drawings[`${tabId}:${paneId}`] ?? []) {
+      chart.overrideOverlay({ id: o.id, ...patch });
+    }
   }
 }

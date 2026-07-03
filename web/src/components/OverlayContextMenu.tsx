@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState, type ComponentType } from 'react';
-import { Settings, Copy, Lock, Unlock, Trash2 } from 'lucide-react';
+import { Settings, Copy, Lock, Unlock, Trash2, Star } from 'lucide-react';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useDrawingsStore } from '@/store/drawingsStore';
+import { useDrawingDefaultsStore } from '@/store/drawingDefaultsStore';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { TEXT_NOTE } from '@/lib/overlays/textNote';
+import { CALLOUT } from '@/lib/overlays/callout';
+import { FIB_TOOL, DEFAULT_FIB_RATIOS, fibRatios } from '@/lib/overlays/fibTool';
+import { FIB_EXTENSION, DEFAULT_EXT_RATIOS } from '@/lib/overlays/fibExtension';
 
 const COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7', '#ffffff', '#64748b'];
 const WIDTHS = [1, 2, 3];
@@ -41,6 +45,7 @@ export function OverlayContextMenu() {
   const [showSettings, setShowSettings] = useState(false);
   const [pts, setPts] = useState<number[]>([]);
   const [text, setText] = useState('');
+  const [levelsText, setLevelsText] = useState('');
 
   useEffect(() => {
     if (!open) setShowSettings(false);
@@ -50,6 +55,9 @@ export function OverlayContextMenu() {
     if (overlay) {
       setPts(overlay.points.map((p) => p.value ?? 0));
       setText((overlay.extendData as { text?: string } | undefined)?.text ?? '');
+      const defaults = overlay.name === FIB_EXTENSION ? DEFAULT_EXT_RATIOS : DEFAULT_FIB_RATIOS;
+      const levels = (overlay.extendData as { levels?: number[] } | undefined)?.levels;
+      setLevelsText((levels && levels.length ? levels : overlay.name === FIB_TOOL ? fibRatios(overlay.extendData) : defaults).join(', '));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay?.id]);
@@ -105,11 +113,36 @@ export function OverlayContextMenu() {
     persistLive();
   };
 
-  // Edit the text of a text annotation.
+  // Edit the text of a text annotation / callout.
   const applyText = (v: string) => {
     setText(v);
     chart.overrideOverlay({ id: overlay.id, extendData: { ...((overlay.extendData ?? {}) as Record<string, unknown>), text: v } });
     persistLive();
+  };
+
+  // Edit fib ratios (comma-separated); applied only when the input parses.
+  const applyLevels = (v: string) => {
+    setLevelsText(v);
+    const levels = v
+      .split(/[,\s]+/)
+      .filter(Boolean)
+      .map(Number);
+    if (levels.length === 0 || levels.some((n) => !Number.isFinite(n))) return;
+    chart.overrideOverlay({ id: overlay.id, extendData: { ...((overlay.extendData ?? {}) as Record<string, unknown>), levels } });
+    persistLive();
+  };
+
+  // Save this overlay's styles (+ non-content extendData like fib levels) as
+  // the default every NEW drawing of this tool starts from.
+  const setAsDefault = () => {
+    const live = chart.getOverlayById(overlay.id) ?? overlay;
+    const ext = { ...((live.extendData ?? {}) as Record<string, unknown>) };
+    delete ext.text; // content is never a default
+    useDrawingDefaultsStore.getState().setDefault(live.name, {
+      styles: (live.styles as Record<string, unknown> | null) ?? undefined,
+      extendData: Object.keys(ext).length ? ext : undefined
+    });
+    close();
   };
 
   const clone = () => {
@@ -163,7 +196,7 @@ export function OverlayContextMenu() {
               </button>
             ))}
           </div>
-          {overlay.name === TEXT_NOTE && (
+          {(overlay.name === TEXT_NOTE || overlay.name === CALLOUT) && (
             <input
               type="text"
               value={text}
@@ -171,6 +204,18 @@ export function OverlayContextMenu() {
               onChange={(e) => applyText(e.target.value)}
               className="w-full rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-slate-100"
             />
+          )}
+          {(overlay.name === FIB_TOOL || overlay.name === FIB_EXTENSION) && (
+            <label className="block text-[11px] text-slate-400">
+              Levels
+              <input
+                type="text"
+                value={levelsText}
+                placeholder="0, 0.382, 0.618, 1"
+                onChange={(e) => applyLevels(e.target.value)}
+                className="mt-0.5 w-full rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-slate-100"
+              />
+            </label>
           )}
           {paneKey && pts.length > 0 && overlay.name !== TEXT_NOTE && (
             <div className="space-y-1 border-t border-slate-800 pt-2">
@@ -190,6 +235,7 @@ export function OverlayContextMenu() {
           )}
         </div>
       )}
+      <Item icon={Star} label="Set as default for tool" onClick={setAsDefault} />
       <Item icon={Copy} label="Clone" onClick={clone} />
       <Item icon={overlay.lock ? Unlock : Lock} label={overlay.lock ? 'Unlock' : 'Lock'} onClick={toggleLock} />
       <Item icon={Trash2} label="Remove" onClick={remove} danger />
