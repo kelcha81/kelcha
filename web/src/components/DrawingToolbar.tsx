@@ -1,0 +1,232 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { MousePointer2, Target, Trash2, Star, ChevronRight } from 'lucide-react';
+import { useChartStore, useActiveChart } from '@/store/chartStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
+import { useDrawingsStore } from '@/store/drawingsStore';
+import { useToolbarStore } from '@/store/toolbarStore';
+import { createPersistentOverlay } from '@/lib/overlays';
+import { TOOLS, TOOL_GROUPS, toolById, registerToolOverlays, type ToolDef, type ToolGroup } from '@/lib/tools/registry';
+import { registerPositionTool, POSITION_TOOL, syncPositionOrder } from '@/lib/overlays/positionTool';
+import { useOverlayMenuStore } from '@/store/overlayMenuStore';
+import { useOrderToolStore } from '@/store/orderToolStore';
+import { registerHotkey, comboLabel } from '@/lib/hotkeys';
+import { MenuPopover } from '@/components/ui/menu';
+import { Tooltip } from '@/components/ui/tooltip';
+import { Kbd } from '@/components/ui/kbd';
+import { confirm } from '@/components/ui/confirm';
+
+/**
+ * Left drawing toolbar, TradingView-style: cursor, pinned favorites, then one
+ * button per tool GROUP (click re-arms the group's last-used tool; the corner
+ * chevron opens a flyout listing the group's tools with favorite stars), the
+ * long/short position tool, and clear-all. Tool metadata lives in
+ * lib/tools/registry.ts — the rail renders whatever is registered there.
+ */
+export function DrawingToolbar() {
+  const chart = useActiveChart();
+  const activeTool = useChartStore((s) => s.activeTool);
+  const setActiveTool = useChartStore((s) => s.setActiveTool);
+  const activePaneId = useChartStore((s) => s.activePaneId);
+  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
+
+  const favorites = useToolbarStore((s) => s.favorites);
+  const lastUsed = useToolbarStore((s) => s.lastUsed);
+  const toggleFavorite = useToolbarStore((s) => s.toggleFavorite);
+  const setLastUsed = useToolbarStore((s) => s.setLastUsed);
+
+  const [openGroup, setOpenGroup] = useState<ToolGroup | null>(null);
+  const paneKey = activePaneId ? `${activeTabId}:${activePaneId}` : null;
+
+  // The overlay currently being drawn (so Esc / re-arm can cancel it cleanly).
+  const drawingId = useRef<string | null>(null);
+
+  useEffect(() => {
+    registerToolOverlays();
+    registerPositionTool();
+  }, []);
+
+  const cancelDrawing = () => {
+    if (drawingId.current && chart) chart.removeOverlay({ id: drawingId.current });
+    drawingId.current = null;
+    setActiveTool(null); // cursor (re-enables click-to-seek)
+  };
+
+  const arm = (t: ToolDef) => {
+    if (!chart || !paneKey) return;
+    if (drawingId.current) chart.removeOverlay({ id: drawingId.current }); // drop a half-drawn overlay
+    setActiveTool(t.overlay);
+    setLastUsed(t.group, t.id);
+    setOpenGroup(null);
+    drawingId.current = createPersistentOverlay(chart, paneKey, {
+      name: t.overlay,
+      onDone: () => {
+        drawingId.current = null;
+        // Deferred so the click that ends the drawing isn't also a seek.
+        setTimeout(() => setActiveTool(null), 0);
+      }
+    });
+  };
+
+  // Hotkeys (stable registration; latest closures via refs, updated in an effect).
+  const armRef = useRef(arm);
+  const cancelRef = useRef(cancelDrawing);
+  useEffect(() => {
+    armRef.current = arm;
+    cancelRef.current = cancelDrawing;
+  });
+  useEffect(() => {
+    const unsubs = TOOLS.filter((t) => t.shortcut).map((t) =>
+      registerHotkey(t.shortcut as string, t.label, 'Drawing', () => armRef.current(t))
+    );
+    unsubs.push(registerHotkey('escape', 'Cancel drawing / cursor', 'Drawing', () => cancelRef.current()));
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
+  // The position tool isn't a persisted drawing — it writes its levels into the
+  // order composer so the panel's Buy/Sell commits it.
+  const startPosition = () => {
+    setActiveTool(POSITION_TOOL);
+    if (chart) {
+      chart.createOverlay({
+        name: POSITION_TOOL,
+        onRemoved: () => {
+          useOrderToolStore.getState().reset();
+          return false;
+        },
+        onDrawEnd: (event) => {
+          syncPositionOrder(event.overlay);
+          setTimeout(() => setActiveTool(null), 0);
+          return true;
+        },
+        onSelected: (event) => {
+          useOverlayMenuStore.getState().setSelected({ chart, id: event.overlay.id, paneKey: null });
+          return false;
+        },
+        onRightClick: (event) => {
+          useOverlayMenuStore.getState().openMenu({ chart, overlay: event.overlay, paneKey: null });
+          return true;
+        }
+      });
+    }
+  };
+
+  const clearAll = async () => {
+    if (!chart || !paneKey) return;
+    if (!(await confirm({ title: 'Clear all drawings on this pane?', danger: true, confirmLabel: 'Clear all' }))) return;
+    chart.removeOverlay();
+    useDrawingsStore.getState().clear(paneKey);
+  };
+
+  const btnCls = (active: boolean) =>
+    `flex h-8 w-8 items-center justify-center rounded transition disabled:opacity-40 ${
+      active ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+    }`;
+
+  const toolTip = (t: ToolDef) => (
+    <span className="flex items-center gap-1.5">
+      {t.label}
+      {t.shortcut && <Kbd>{comboLabel(t.shortcut)}</Kbd>}
+    </span>
+  );
+
+  const favTools = favorites.map(toolById).filter((t): t is ToolDef => !!t);
+
+  return (
+    <div className="flex w-11 flex-col items-center gap-1 border-r border-slate-800 bg-slate-900/60 py-2">
+      <Tooltip label="Cursor">
+        <button type="button" onClick={cancelDrawing} className={btnCls(activeTool === null)}>
+          <MousePointer2 className="h-4 w-4" />
+        </button>
+      </Tooltip>
+
+      {favTools.length > 0 && (
+        <>
+          {favTools.map((t) => (
+            <Tooltip key={t.id} label={toolTip(t)}>
+              <button type="button" disabled={!chart} onClick={() => arm(t)} className={btnCls(activeTool === t.overlay)}>
+                <t.Icon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          ))}
+          <div className="my-1 h-px w-6 bg-slate-700" />
+        </>
+      )}
+
+      {TOOL_GROUPS.map((group) => {
+        const tools = TOOLS.filter((t) => t.group === group);
+        const current = tools.find((t) => t.id === lastUsed[group]) ?? tools[0];
+        if (!current) return null;
+        return (
+          <div key={group} className="group relative">
+            <Tooltip label={toolTip(current)}>
+              <button
+                type="button"
+                disabled={!chart}
+                onClick={() => arm(current)}
+                className={btnCls(activeTool === current.overlay)}
+              >
+                <current.Icon className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <MenuPopover
+              open={openGroup === group}
+              onOpenChange={(o) => setOpenGroup(o ? group : null)}
+              side="right"
+              title={group}
+              contentClassName="w-56 p-1.5"
+              trigger={<ChevronRight className="h-3 w-3" />}
+              triggerClassName="absolute -bottom-0.5 -right-0.5 rounded text-slate-500 opacity-0 transition hover:text-white group-hover:opacity-100"
+            >
+              {tools.map((t) => {
+                const fav = favorites.includes(t.id);
+                return (
+                  <div key={t.id} className="flex items-center rounded hover:bg-slate-800/60">
+                    <button
+                      type="button"
+                      onClick={() => arm(t)}
+                      className="flex flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs text-slate-200"
+                    >
+                      <t.Icon className="h-3.5 w-3.5 text-slate-400" />
+                      {t.label}
+                      {t.shortcut && (
+                        <span className="ml-auto">
+                          <Kbd>{comboLabel(t.shortcut)}</Kbd>
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={fav ? `Unpin ${t.label}` : `Pin ${t.label} to toolbar`}
+                      onClick={() => toggleFavorite(t.id)}
+                      className="px-1.5"
+                    >
+                      <Star className={`h-3 w-3 ${fav ? 'fill-amber-400 text-amber-400' : 'text-slate-600 hover:text-slate-400'}`} />
+                    </button>
+                  </div>
+                );
+              })}
+            </MenuPopover>
+          </div>
+        );
+      })}
+
+      <div className="my-1 h-px w-6 bg-slate-700" />
+
+      <Tooltip label="Long/Short position (sets the order ticket)">
+        <button type="button" disabled={!chart} onClick={startPosition} className={btnCls(activeTool === POSITION_TOOL)}>
+          <Target className="h-4 w-4" />
+        </button>
+      </Tooltip>
+
+      <div className="my-1 h-px w-6 bg-slate-700" />
+
+      <Tooltip label="Clear all drawings (right-click a drawing to delete just it)">
+        <button type="button" disabled={!chart} onClick={clearAll} className={btnCls(false)}>
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </Tooltip>
+    </div>
+  );
+}

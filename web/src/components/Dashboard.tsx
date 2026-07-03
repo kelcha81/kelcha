@@ -8,7 +8,7 @@ import type { Pane } from '@/lib/layout';
 import type { Timeframe } from '@/store/replayStore';
 import { TabBar } from '@/components/TabBar';
 import { TopToolbar } from '@/components/TopToolbar';
-import { DrawingRail } from '@/components/DrawingRail';
+import { DrawingToolbar } from '@/components/DrawingToolbar';
 import { CandleChart } from '@/components/CandleChart';
 import { PlaybackBar } from '@/components/PlaybackBar';
 import { HeadClock } from '@/components/HeadClock';
@@ -98,7 +98,7 @@ export function Dashboard() {
       <TopToolbar />
 
       <div className="flex min-h-0 flex-1">
-        <DrawingRail />
+        <DrawingToolbar />
         <div className={`grid min-h-0 min-w-0 flex-1 gap-2 p-2 ${gridCls}`}>
           {panes.map((p) => (
             <PaneView key={p.id} tabId={tab.id} pane={p} />

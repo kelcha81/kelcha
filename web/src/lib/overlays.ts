@@ -31,9 +31,10 @@ export function createPersistentOverlay(
     styles?: Record<string, unknown>;
     onDone?: () => void;
   }
-): void {
+): string | null {
   const save = persist(key);
-  chart.createOverlay({
+  // Single-object create returns a single id (the array form isn't used here).
+  return chart.createOverlay({
     name: opts.name,
     points: opts.points,
     id: opts.id,
@@ -57,7 +58,7 @@ export function createPersistentOverlay(
       useOverlayMenuStore.getState().openMenu({ chart, overlay: e.overlay, paneKey: key });
       return true;
     }
-  });
+  }) as string | null;
 }
 
 /** Re-create every saved overlay for `key` on a freshly mounted chart. */

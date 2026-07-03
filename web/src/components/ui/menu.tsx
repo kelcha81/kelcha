@@ -16,7 +16,8 @@ export function MenuPopover({
   title,
   children,
   open,
-  onOpenChange
+  onOpenChange,
+  side = 'bottom'
 }: {
   trigger: ReactNode;
   triggerClassName?: string;
@@ -25,6 +26,7 @@ export function MenuPopover({
   children: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  side?: 'top' | 'bottom' | 'left' | 'right';
 }) {
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
@@ -32,6 +34,7 @@ export function MenuPopover({
       <Popover.Portal>
         <Popover.Content
           align="start"
+          side={side}
           sideOffset={6}
           className={`z-[var(--z-menu)] rounded border border-slate-700 bg-slate-900 p-2 text-slate-200 shadow-xl focus:outline-none ${contentClassName}`}
         >
