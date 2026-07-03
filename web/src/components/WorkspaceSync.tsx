@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTradingStore } from '@/store/tradingStore';
 import { useBacktestStore } from '@/store/backtestStore';
 import { loadWorkspace, saveWorkspace } from '@/lib/workspaceData';
+import { runSync } from '@/store/syncStore';
 
 // Syncs the user's workspace (tabs + paper trades + saved backtests) with
 // Firestore: clears + loads on sign-in, saves (debounced) on change, clears on
@@ -50,13 +51,17 @@ export function WorkspaceSync() {
       if (!loaded.current) return;
       clearTimeout(t);
       t = setTimeout(() => {
-        const ws = useWorkspaceStore.getState();
-        const tr = useTradingStore.getState();
-        saveWorkspace(user.uid, {
-          tabs: ws.tabs,
-          activeTabId: ws.activeTabId,
-          trading: { positions: tr.positions, pending: tr.pending, trades: tr.trades, accounts: tr.accounts }
-        }).catch(() => {});
+        // runSync surfaces failures (toast + status chip) and retries with
+        // backoff; the closure re-reads state so a retry writes the latest.
+        runSync('workspace', () => {
+          const ws = useWorkspaceStore.getState();
+          const tr = useTradingStore.getState();
+          return saveWorkspace(user.uid, {
+            tabs: ws.tabs,
+            activeTabId: ws.activeTabId,
+            trading: { positions: tr.positions, pending: tr.pending, trades: tr.trades, accounts: tr.accounts }
+          });
+        });
       }, 1000);
     };
     const unsubWs = useWorkspaceStore.subscribe(save);

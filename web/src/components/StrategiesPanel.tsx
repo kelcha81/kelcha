@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { X, Sparkles, Play, Square, Save, ShieldCheck, BookOpen } from 'lucide-react';
 import { AVAILABLE_SYMBOLS, getSymbolInfo } from '@/lib/symbols';
 import { JournalModal } from './JournalModal';
+import { Modal } from '@/components/ui/dialog';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useActiveTab, useWorkspaceStore } from '@/store/workspaceStore';
 import { useReplayStore } from '@/store/replayStore';
@@ -222,11 +223,7 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
-      <div
-        className="flex max-h-[85vh] w-[720px] max-w-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="ICT Strategies" className="w-[720px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold">ICT Strategies</span>
@@ -467,7 +464,6 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
             />
           )}
         </div>
-      </div>
 
       {journalTrade && (
         <JournalModal
@@ -486,7 +482,7 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
           onClose={() => setJournalTrade(null)}
         />
       )}
-    </div>
+    </Modal>
   );
 }
 

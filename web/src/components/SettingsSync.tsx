@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useSettingsStore } from '@/store/settingsStore';
 import { loadSettings, saveSettings } from '@/lib/userData';
+import { runSync } from '@/store/syncStore';
 
 // Syncs the user's settings with Firestore: loads on sign-in, saves (debounced)
 // on change. This is the per-account data that proves isolation via rules.
@@ -38,16 +39,20 @@ export function SettingsSync() {
   useEffect(() => {
     if (!user) return;
     let t: ReturnType<typeof setTimeout> | undefined;
-    const unsub = useSettingsStore.subscribe((s) => {
+    const unsub = useSettingsStore.subscribe(() => {
       if (!loaded.current) return;
       clearTimeout(t);
       t = setTimeout(() => {
-        saveSettings(user.uid, {
-          theme: s.theme,
-          preset: s.preset,
-          customThemes: s.customThemes,
-          aiModel: s.aiModel
-        }).catch(() => {});
+        // Surfaced + retried via runSync; re-reads state so retries stay fresh.
+        runSync('settings', () => {
+          const cur = useSettingsStore.getState();
+          return saveSettings(user.uid, {
+            theme: cur.theme,
+            preset: cur.preset,
+            customThemes: cur.customThemes,
+            aiModel: cur.aiModel
+          });
+        });
       }, 800);
     });
     return () => {

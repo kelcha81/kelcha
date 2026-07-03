@@ -21,6 +21,7 @@ import { useChartStore } from '@/store/chartStore';
 import { POSITION_TOOL } from '@/lib/overlays/positionTool';
 import { PerformanceReport } from '@/components/PerformanceReport';
 import { BacktestResults } from '@/components/BacktestResults';
+import { confirm } from '@/components/ui/confirm';
 
 const EMPTY_POS: Position[] = [];
 const EMPTY_PENDING: PendingOrder[] = [];
@@ -316,7 +317,21 @@ export function TradingPanel() {
         <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
           <span>History ({trades.length})</span>
           {trades.length > 0 && (
-            <button type="button" onClick={() => clear(activeTabId)} className="hover:text-white">
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: 'Clear trade history?',
+                    body: `Deletes all ${trades.length} closed trades for this session.`,
+                    danger: true,
+                    confirmLabel: 'Clear'
+                  })
+                )
+                  clear(activeTabId);
+              }}
+              className="hover:text-white"
+            >
               Clear
             </button>
           )}

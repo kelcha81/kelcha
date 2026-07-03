@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { useUserPluginsStore, type UserPlugin } from '@/store/userPluginsStore';
 import { usePluginStore } from '@/store/pluginStore';
+import { Modal } from '@/components/ui/dialog';
+import { confirm } from '@/components/ui/confirm';
 
 const TEMPLATE = `// ctx: { chart, container, symbol }
 //   chart     -> KLineChart instance (createIndicator, createOverlay, ...)
@@ -44,14 +46,8 @@ export function PluginManager({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
-      onMouseDown={onClose}
-    >
-      <div
-        className="flex h-[80vh] w-[860px] max-w-full overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="Plugin manager" className="h-[80vh] max-h-[80vh] w-[860px]">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Plugin list */}
         <div className="flex w-56 shrink-0 flex-col border-r border-slate-800 p-2">
           <div className="mb-2 flex items-center justify-between">
@@ -83,7 +79,17 @@ export function PluginManager({ onClose }: { onClose: () => void }) {
                 <button type="button" onClick={() => startEdit(p)} className="flex-1 truncate text-left">
                   {p.name}
                 </button>
-                <button type="button" aria-label="Delete" onClick={() => remove(p.id)} className="text-slate-400 hover:text-red-400">
+                <button
+                  type="button"
+                  aria-label="Delete"
+                  onClick={async () => {
+                    if (await confirm({ title: `Delete plugin "${p.name}"?`, danger: true, confirmLabel: 'Delete' })) {
+                      remove(p.id);
+                      if (editingId === p.id) startNew();
+                    }
+                  }}
+                  className="text-slate-400 hover:text-red-400"
+                >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -126,6 +132,6 @@ export function PluginManager({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

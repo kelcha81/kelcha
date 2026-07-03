@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Plus, Home } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
+import { confirm } from '@/components/ui/confirm';
 
 /**
  * Session tabs: switch / rename (double-click) / close, and "+" opens the New
@@ -77,7 +78,17 @@ export function TabBar() {
               <button
                 type="button"
                 aria-label={`Close ${t.label}`}
-                onClick={() => closeTab(t.id)}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: `Delete session "${t.label}"?`,
+                      body: 'Its trades and drawings stay in your account until the session is deleted.',
+                      danger: true,
+                      confirmLabel: 'Delete'
+                    })
+                  )
+                    closeTab(t.id);
+                }}
                 className="ml-0.5 rounded text-slate-500 transition hover:bg-slate-700 hover:text-white"
               >
                 <X className="h-3.5 w-3.5" />

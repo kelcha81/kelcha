@@ -10,6 +10,7 @@ import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/ob
 import { saveForecastEntry } from '@/lib/journal';
 import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
+import { Modal } from '@/components/ui/dialog';
 
 const ATTACH = 'attachments';
 const SLOTS = ['Daily', '4hr', '1hr', '15 minutes'];
@@ -220,11 +221,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
-      <div
-        className="flex max-h-[85vh] w-[560px] max-w-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="New forecast" className="w-[560px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CalendarRange className="h-4 w-4" /> New Forecast — {symbol.toUpperCase()}
@@ -362,7 +359,6 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
             {busy ? 'Saving…' : editing ? 'Update Forecast' : toNotion ? 'Save to Notion' : 'Save Forecast'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

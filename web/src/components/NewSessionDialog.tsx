@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { SYMBOL_LIST, type AssetClass } from '@/lib/symbols';
 import { usePackagedSymbols } from '@/hooks/usePackagedSymbols';
 import { getBounds } from '@/lib/candleSource';
+import { Modal } from '@/components/ui/dialog';
 
 // Static data span for the date pickers (the session clamps to real bounds).
 const DATA_START = '2022-01-01';
@@ -84,11 +85,7 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
-      <div
-        className="w-[420px] max-w-full rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="New session" className="w-[420px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <span className="text-sm font-semibold">New Session</span>
           <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
@@ -202,7 +199,6 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
             Create session
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

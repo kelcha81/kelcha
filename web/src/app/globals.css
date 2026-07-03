@@ -19,6 +19,13 @@
   }
 }
 
+/* Layer scale for floating UI — use z-[var(--z-*)] instead of ad-hoc numbers. */
+:root {
+  --z-menu: 40;    /* dropdowns, popovers, context menus */
+  --z-modal: 50;   /* dialogs (stacked dialogs share this; DOM order wins) */
+  --z-toast: 100;  /* sonner toasts */
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

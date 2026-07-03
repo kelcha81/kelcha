@@ -14,6 +14,7 @@ import { DataManager } from '@/components/DataManager';
 import { ForecastModal } from '@/components/ForecastModal';
 import { JournalModal } from '@/components/JournalModal';
 import { EngineStatus } from '@/components/EngineStatus';
+import { SyncStatus } from '@/components/SyncStatus';
 
 const LAYOUTS: { count: LayoutCount; name: string; Icon: LucideIcon }[] = [
   { count: 1, name: 'Single', Icon: Square },
@@ -102,7 +103,8 @@ export function TopToolbar() {
         <BookOpen className="h-3.5 w-3.5" /> Journal
       </button>
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        <SyncStatus />
         <EngineStatus />
       </div>
 

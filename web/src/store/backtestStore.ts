@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { BacktestStats, BacktestTrade, IctAnnotation } from '@/lib/strategyApi';
 import { loadBacktests, saveBacktest, removeBacktest } from '@/lib/workspaceData';
 import { firebaseAuth } from '@/lib/firebase';
+import { runSync } from '@/store/syncStore';
 
 // Latest backtest result PER session tab, so it survives closing the Strategies
 // modal, switching tabs, AND a full reload — persisted to IndexedDB (keyed by the
@@ -50,7 +51,7 @@ export const useBacktestStore = create<BacktestVizState>((set) => ({
       selected: { ...s.selected, [tabId]: null }
     }));
     const uid = firebaseAuth().currentUser?.uid;
-    if (uid) void saveBacktest(uid, tabId, data).catch(() => {});
+    if (uid) runSync('backtests', () => saveBacktest(uid, tabId, data));
   },
   clear: (tabId) => {
     set((s) => {
@@ -61,7 +62,7 @@ export const useBacktestStore = create<BacktestVizState>((set) => ({
       return { results, selected };
     });
     const uid = firebaseAuth().currentUser?.uid;
-    if (uid) void removeBacktest(uid, tabId).catch(() => {});
+    if (uid) runSync('backtests', () => removeBacktest(uid, tabId));
   },
   select: (tabId, tradeId) => set((s) => ({ selected: { ...s.selected, [tabId]: tradeId } })),
   toggle: (key) => set((s) => ({ [key]: !s[key] }) as Partial<BacktestVizState>),

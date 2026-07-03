@@ -22,6 +22,7 @@ import { registerFibTool, FIB_TOOL } from '@/lib/overlays/fibTool';
 import { registerTextNote, TEXT_NOTE } from '@/lib/overlays/textNote';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useOrderToolStore } from '@/store/orderToolStore';
+import { confirm } from '@/components/ui/confirm';
 
 interface Tool {
   id: string;
@@ -96,8 +97,9 @@ export function DrawingRail() {
     }
   };
 
-  const clearAll = () => {
+  const clearAll = async () => {
     if (!chart || !paneKey) return;
+    if (!(await confirm({ title: 'Clear all drawings on this pane?', danger: true, confirmLabel: 'Clear all' }))) return;
     chart.removeOverlay();
     useDrawingsStore.getState().clear(paneKey);
   };

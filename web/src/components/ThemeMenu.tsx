@@ -1,9 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Palette, X } from 'lucide-react';
 import { useSettingsStore, PRESETS, type ChartTheme } from '@/store/settingsStore';
-import { useClickOutside } from '@/hooks/useClickOutside';
+import { MenuPopover } from '@/components/ui/menu';
 
 const SWATCHES: { key: keyof ChartTheme; label: string }[] = [
   { key: 'up', label: 'Up' },
@@ -24,10 +24,7 @@ export function ThemeMenu() {
   const deleteTheme = useSettingsStore((s) => s.deleteTheme);
   const resetTheme = useSettingsStore((s) => s.resetTheme);
 
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-  useClickOutside(ref, open, () => setOpen(false));
 
   const customNames = Object.keys(customThemes);
   const dirty = preset === 'Custom'; // edited but unsaved
@@ -40,31 +37,17 @@ export function ThemeMenu() {
   };
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Theme"
-        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
-      >
-        <Palette className="h-3.5 w-3.5" />
-        {preset}
-        {dirty && <span className="text-amber-400">•</span>}
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-8 z-30 w-60 rounded border border-slate-700 bg-slate-900 p-2 shadow-xl">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-200">Theme</span>
-            <button
-              type="button"
-              aria-label="Close"
-              onClick={() => setOpen(false)}
-              className="text-slate-400 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+    <MenuPopover
+      title="Theme"
+      contentClassName="w-60"
+      trigger={
+        <>
+          <Palette className="h-3.5 w-3.5" />
+          {preset}
+          {dirty && <span className="text-amber-400">•</span>}
+        </>
+      }
+    >
           <div className="mb-1 text-[11px] uppercase text-slate-500">Themes</div>
           <div className="mb-3 flex flex-wrap gap-1">
             {Object.keys(PRESETS).map((n) => (
@@ -145,8 +128,6 @@ export function ThemeMenu() {
           >
             Reset to Dark
           </button>
-        </div>
-      )}
-    </div>
+    </MenuPopover>
   );
 }

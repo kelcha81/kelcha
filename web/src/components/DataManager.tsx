@@ -6,6 +6,7 @@ import { SYMBOL_LIST, type SymbolInfo } from '@/lib/symbols';
 import { seedSymbol } from '@/lib/seed';
 import { hasSymbol, deleteSymbol } from '@/lib/idb';
 import { getIdToken } from '@/lib/firebase';
+import { Modal } from '@/components/ui/dialog';
 
 interface Status {
   packaged: boolean;
@@ -135,11 +136,7 @@ export function DataManager({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
-      <div
-        className="flex max-h-[85vh] w-[620px] max-w-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="Market data" className="w-[620px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <span className="flex items-center gap-2 text-sm font-semibold">
             <Database className="h-4 w-4" /> Market Data
@@ -241,7 +238,6 @@ export function DataManager({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

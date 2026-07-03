@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { useEffect } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { usePluginStore } from '@/store/pluginStore';
 import { initPlugins, getPlugin } from '@/lib/plugins/registry';
-import { useClickOutside } from '@/hooks/useClickOutside';
+import { MenuPopover } from '@/components/ui/menu';
 
 /**
  * Dropdown listing all plugins: toggle on/off, and (for indicators) edit their
@@ -21,38 +21,20 @@ export function IndicatorsMenu() {
   const toggle = usePluginStore((s) => s.toggle);
   const setParams = usePluginStore((s) => s.setParams);
 
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useClickOutside(ref, open, () => setOpen(false));
-
   const list = Object.values(registered);
   const onCount = list.filter((m) => enabled[m.id]).length;
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
-      >
-        Indicators{onCount > 0 ? ` (${onCount})` : ''}
-        <ChevronDown className="h-3 w-3" />
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-8 z-30 w-64 rounded border border-slate-700 bg-slate-900 p-2 shadow-xl">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-200">Indicators</span>
-            <button
-              type="button"
-              aria-label="Close"
-              onClick={() => setOpen(false)}
-              className="text-slate-400 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          {list.map((meta) => {
+    <MenuPopover
+      title="Indicators"
+      trigger={
+        <>
+          Indicators{onCount > 0 ? ` (${onCount})` : ''}
+          <ChevronDown className="h-3 w-3" />
+        </>
+      }
+    >
+      {list.map((meta) => {
             const plugin = getPlugin(meta.id);
             const on = !!enabled[meta.id];
             const schema = plugin?.params;
@@ -93,8 +75,6 @@ export function IndicatorsMenu() {
               </div>
             );
           })}
-        </div>
-      )}
-    </div>
+    </MenuPopover>
   );
 }

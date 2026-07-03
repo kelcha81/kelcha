@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTradingStore, DEFAULT_ACCOUNT } from '@/store/tradingStore';
 import { computeStats } from '@/lib/performance';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
+import { confirm } from '@/components/ui/confirm';
 
 const fmtDate = (ts?: number) => (ts ? new Date(ts).toISOString().slice(0, 10) : '—');
 const money = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2);
@@ -85,7 +86,17 @@ export function HomeDashboard() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => closeTab(tab.id)}
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: `Delete session "${tab.label}"?`,
+                        body: 'This permanently removes the session, its trades and its stats.',
+                        danger: true,
+                        confirmLabel: 'Delete'
+                      })
+                    )
+                      closeTab(tab.id);
+                  }}
                   title="Delete session"
                   aria-label="Delete session"
                   className="rounded p-1 text-slate-400 transition hover:bg-slate-800 hover:text-red-400"

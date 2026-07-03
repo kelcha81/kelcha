@@ -7,6 +7,7 @@ import { useTradingStore, DEFAULT_ACCOUNT, type Trade } from '@/store/tradingSto
 import { computeStats, equityCurve, maeMfe } from '@/lib/performance';
 import { getSymbolInfo } from '@/lib/symbols';
 import { JournalModal } from './JournalModal';
+import { Modal } from '@/components/ui/dialog';
 
 function Spark({ values, color, fill }: { values: number[]; color: string; fill?: boolean }) {
   const W = 520;
@@ -65,11 +66,7 @@ export function PerformanceReport({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
-      <div
-        className="flex max-h-[85vh] w-[680px] max-w-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="Performance report" className="w-[680px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <span className="text-sm font-semibold">Performance — {symbol.toUpperCase()}</span>
           <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
@@ -148,7 +145,6 @@ export function PerformanceReport({ onClose }: { onClose: () => void }) {
             </>
           )}
         </div>
-      </div>
 
       {journalTrade && (
         <JournalModal
@@ -167,6 +163,6 @@ export function PerformanceReport({ onClose }: { onClose: () => void }) {
           onClose={() => setJournalTrade(null)}
         />
       )}
-    </div>
+    </Modal>
   );
 }

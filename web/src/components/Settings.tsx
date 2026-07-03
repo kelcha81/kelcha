@@ -12,6 +12,7 @@ import {
   notionListDatabases,
   type NotionStatus
 } from '@/lib/notion';
+import { Modal } from '@/components/ui/dialog';
 
 const field = 'rounded border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100';
 
@@ -69,11 +70,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
-      <div
-        className="flex max-h-[85vh] w-[560px] max-w-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-slate-200"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} ariaLabel="Settings" className="w-[560px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="text-sm font-semibold">Settings</div>
           <button type="button" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white">
@@ -191,7 +188,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
