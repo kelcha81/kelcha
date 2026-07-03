@@ -1,22 +1,12 @@
 import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { requireAdmin } from '@/lib/apiAuth';
 
 // Admin-only user management. Every method verifies the caller's Firebase ID
 // token carries the admin:true custom claim. Creation/claims go through the
 // Admin SDK (only the admin can provision accounts or toggle modules).
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-async function requireAdmin(req: Request) {
-  const authz = req.headers.get('authorization') || '';
-  if (!authz.startsWith('Bearer ')) return null;
-  try {
-    const decoded = await adminAuth().verifyIdToken(authz.slice(7));
-    return decoded.admin === true ? decoded : null;
-  } catch {
-    return null;
-  }
-}
 
 const forbidden = () => NextResponse.json({ error: 'forbidden' }, { status: 403 });
 

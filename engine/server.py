@@ -51,6 +51,11 @@ from models import Account
 PORT = int(os.environ.get("PORT", "8000"))
 HOST = os.environ.get("ICT_HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
 
+# CORS allowlist (comma-separated origins). Unset -> "*" for local dev; the
+# Cloud Run deploy sets it to the web app's origin so arbitrary sites can't
+# drive the engine from a browser (requests are ID-token-gated regardless).
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ICT_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
 
 def _load_dotenv() -> None:
     """Load ict-engine/.env (KEY=VALUE lines) so ANTHROPIC_API_KEY can live in a
@@ -206,9 +211,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if not ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        else:
+            origin = self.headers.get("Origin", "")
+            if origin in ALLOWED_ORIGINS:
+                self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+    def _fail(self, exc: Exception):
+        """Client-safe error reply: expected validation errors keep their message;
+        anything unexpected returns a generic 500 (details stay in server logs)."""
+        if isinstance(exc, (ValueError, KeyError, FileNotFoundError)):
+            self._send(400, {"error": str(exc)})
+        else:
+            self._send(500, {"error": "internal error"})
 
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
@@ -259,7 +278,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
             log.exception("GET %s failed", path)
-            self._send(400, {"error": str(exc)})
+            self._fail(exc)
 
     def do_POST(self):
         gate = self._gate()
@@ -289,7 +308,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
             log.exception("POST %s failed", path)
-            self._send(400, {"error": str(exc)})
+            self._fail(exc)
 
     def _generate(self, req: dict):
         """Stream generated strategy code as Server-Sent Events."""
@@ -309,7 +328,8 @@ class Handler(BaseHTTPRequestHandler):
             log.info("strategy generate: done")
         except Exception as exc:  # noqa: BLE001
             log.exception("strategy generate failed")
-            self.wfile.write(f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n".encode("utf-8"))
+            msg = str(exc) if isinstance(exc, (ValueError, KeyError)) else "generation failed (see server logs)"
+            self.wfile.write(f"event: error\ndata: {json.dumps({'error': msg})}\n\n".encode("utf-8"))
         self.wfile.flush()
 
     def log_message(self, fmt, *args):  # route access logs to the file logger

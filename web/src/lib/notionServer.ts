@@ -1,4 +1,4 @@
-import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { adminDb } from '@/lib/firebaseAdmin';
 
 // Server-side Notion integration (approach A: per-user internal-integration
 // token). Notion's API blocks browser CORS, so all calls go through the web
@@ -7,16 +7,8 @@ import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 
 const NOTION_VERSION = '2022-06-28';
 
-/** Verify the caller's Firebase ID token; return their uid or null. */
-export async function requireUid(req: Request): Promise<string | null> {
-  const authz = req.headers.get('authorization') || '';
-  if (!authz.startsWith('Bearer ')) return null;
-  try {
-    return (await adminAuth().verifyIdToken(authz.slice(7))).uid;
-  } catch {
-    return null;
-  }
-}
+// Shared route auth lives in lib/apiAuth; re-exported for the /api/notion routes.
+export { requireUid } from '@/lib/apiAuth';
 
 export interface NotionConfig {
   token?: string;

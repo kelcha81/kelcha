@@ -5,6 +5,7 @@ import { X, Download, RefreshCw, Database, Loader2 } from 'lucide-react';
 import { SYMBOL_LIST, type SymbolInfo } from '@/lib/symbols';
 import { seedSymbol } from '@/lib/seed';
 import { hasSymbol, deleteSymbol } from '@/lib/idb';
+import { getIdToken } from '@/lib/firebase';
 
 interface Status {
   packaged: boolean;
@@ -17,9 +18,13 @@ async function streamPackage(
   onStage: (s: string) => void,
   onLog: (line: string) => void
 ): Promise<void> {
+  const token = await getIdToken();
   const res = await fetch('/api/symbols/package', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(body)
   });
   if (!res.ok || !res.body) {

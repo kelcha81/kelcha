@@ -10,12 +10,10 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "dukascopy-node": "^1.6.0",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.0.0",
     "idb": "^8.0.3",
     "klinecharts": "^9.8.12",
-    "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.17.0",
     "next": "16.2.7",
     "react": "19.2.4",
