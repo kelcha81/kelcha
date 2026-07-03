@@ -1,5 +1,4 @@
-import { DashboardLoader } from '@/components/DashboardLoader';
-import { Dashboard } from '@/components/Dashboard';
+import { AppRoot } from '@/components/AppRoot';
 import { AuthGate } from '@/components/AuthGate';
 import { AccountBar } from '@/components/AccountBar';
 import { SettingsSync } from '@/components/SettingsSync';
@@ -12,9 +11,7 @@ export default function Home() {
         <AccountBar />
         <SettingsSync />
         <WorkspaceSync />
-        <DashboardLoader>
-          <Dashboard />
-        </DashboardLoader>
+        <AppRoot />
       </AuthGate>
     </main>
   );

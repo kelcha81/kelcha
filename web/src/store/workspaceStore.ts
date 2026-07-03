@@ -18,12 +18,17 @@ export interface Tab {
 interface WorkspaceState {
   tabs: Tab[];
   activeTabId: string;
+  view: 'home' | 'session'; // transient (not synced to Firestore): app always lands on Home
   addTab: (tab: Omit<Tab, 'id' | 'layout'>) => void;
   closeTab: (id: string) => void;
   selectTab: (id: string) => void;
   renameTab: (id: string, label: string) => void;
   setActiveCount: (count: LayoutCount) => void;
   setActivePaneTimeframe: (paneId: string, tf: Timeframe) => void;
+  /** Open a session (from the Home dashboard) and switch to the trading view. */
+  openSession: (id: string) => void;
+  /** Return to the Home dashboard (session manager). */
+  goHome: () => void;
   /** Replace the whole workspace (on load from Firestore). */
   hydrate: (tabs: Tab[], activeTabId: string) => void;
   /** Reset to a single default tab (on sign-out / account switch). */
@@ -54,18 +59,21 @@ function updateActive(tabs: Tab[], activeTabId: string, fn: (t: Tab) => Tab): Ta
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       tabs: [DEFAULT_TAB],
       activeTabId: DEFAULT_TAB.id,
+      view: 'home',
 
       addTab: (tab) =>
         set((s) => {
           const id = `tab-${tab.symbol}-${Date.now()}`;
           const tabs = saveHead(s.tabs, s.activeTabId);
-          return { tabs: [...tabs, { ...tab, id, layout: defaultLayout() }], activeTabId: id };
+          // Creating a session opens it (leaves the Home dashboard).
+          return { tabs: [...tabs, { ...tab, id, layout: defaultLayout() }], activeTabId: id, view: 'session' };
         }),
 
       closeTab: (id) =>
         set((s) => {
           const tabs = s.tabs.filter((t) => t.id !== id);
-          if (tabs.length === 0) return s;
+          // Deleting the last session drops back to Home (nothing to render).
+          if (tabs.length === 0) return { tabs, activeTabId: '', view: 'home' };
           const activeTabId = s.activeTabId === id ? tabs[0].id : s.activeTabId;
           return { tabs, activeTabId };
         }),
@@ -98,13 +106,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
           }))
         })),
 
+      openSession: (id) =>
+        set((s) => ({
+          tabs: id === s.activeTabId ? s.tabs : saveHead(s.tabs, s.activeTabId),
+          activeTabId: id,
+          view: 'session'
+        })),
+
+      goHome: () => set((s) => ({ tabs: saveHead(s.tabs, s.activeTabId), view: 'home' })),
+
       hydrate: (tabs, activeTabId) =>
         set({
           tabs: tabs.length ? tabs.map((t) => ({ ...t, layout: t.layout ?? defaultLayout() })) : [DEFAULT_TAB],
           activeTabId: tabs.some((t) => t.id === activeTabId) ? activeTabId : (tabs[0]?.id ?? DEFAULT_TAB.id)
         }),
 
-      reset: () => set({ tabs: [DEFAULT_TAB], activeTabId: DEFAULT_TAB.id })
+      reset: () => set({ tabs: [DEFAULT_TAB], activeTabId: DEFAULT_TAB.id, view: 'home' })
     })
 );
 

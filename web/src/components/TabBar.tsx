@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Home } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 
@@ -15,6 +15,7 @@ export function TabBar() {
   const selectTab = useWorkspaceStore((s) => s.selectTab);
   const closeTab = useWorkspaceStore((s) => s.closeTab);
   const renameTab = useWorkspaceStore((s) => s.renameTab);
+  const goHome = useWorkspaceStore((s) => s.goHome);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -27,6 +28,17 @@ export function TabBar() {
 
   return (
     <div className="flex items-center gap-1 border-b border-slate-800 bg-slate-950 px-2 py-1">
+      <button
+        type="button"
+        title="Home (sessions dashboard)"
+        aria-label="Home (sessions dashboard)"
+        onClick={goHome}
+        className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition hover:bg-slate-800"
+      >
+        <Home className="h-4 w-4" />
+      </button>
+      <div className="mx-1 h-4 w-px bg-slate-700" />
+
       {tabs.map((t) => {
         const active = t.id === activeTabId;
         return (
