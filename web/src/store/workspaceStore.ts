@@ -35,14 +35,6 @@ interface WorkspaceState {
   reset: () => void;
 }
 
-const DEFAULT_TAB: Tab = {
-  id: 'tab-eurusd',
-  symbol: 'eurusd',
-  label: 'EUR/USD',
-  pricePrecision: 5,
-  layout: defaultLayout()
-};
-
 /** Snapshot the current replay head into the currently-active tab. */
 function saveHead(tabs: Tab[], activeTabId: string): Tab[] {
   const head = useReplayStore.getState().currentTimestamp;
@@ -56,9 +48,11 @@ function updateActive(tabs: Tab[], activeTabId: string, fn: (t: Tab) => Tab): Ta
 
 // In-memory; the per-user copy lives in Firestore (see WorkspaceSync). No
 // localStorage persist so one account's tabs never bleed into another's.
+// Zero sessions is a valid state — there is NO default session; with no tabs
+// the app shows the Home dashboard's empty state (AppRoot guards the shell).
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
-      tabs: [DEFAULT_TAB],
-      activeTabId: DEFAULT_TAB.id,
+      tabs: [],
+      activeTabId: '',
       view: 'home',
 
       addTab: (tab) =>
@@ -117,15 +111,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 
       hydrate: (tabs, activeTabId) =>
         set({
-          tabs: tabs.length ? tabs.map((t) => ({ ...t, layout: t.layout ?? defaultLayout() })) : [DEFAULT_TAB],
-          activeTabId: tabs.some((t) => t.id === activeTabId) ? activeTabId : (tabs[0]?.id ?? DEFAULT_TAB.id)
+          tabs: tabs.map((t) => ({ ...t, layout: t.layout ?? defaultLayout() })),
+          activeTabId: tabs.some((t) => t.id === activeTabId) ? activeTabId : (tabs[0]?.id ?? '')
         }),
 
-      reset: () => set({ tabs: [DEFAULT_TAB], activeTabId: DEFAULT_TAB.id, view: 'home' })
+      reset: () => set({ tabs: [], activeTabId: '', view: 'home' })
     })
 );
 
-/** The currently active tab (falls back to the first tab). */
+/**
+ * The currently active tab (falls back to the first tab). Only call from the
+ * session view: AppRoot never renders it with zero tabs, so this is non-null
+ * there. With no tabs it returns undefined at runtime.
+ */
 export function useActiveTab(): Tab {
   return useWorkspaceStore((s) => s.tabs.find((t) => t.id === s.activeTabId) ?? s.tabs[0]);
 }
