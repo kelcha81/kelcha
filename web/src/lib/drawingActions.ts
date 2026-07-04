@@ -3,7 +3,11 @@ import { useDrawingsStore } from '@/store/drawingsStore';
 import { type ToolDefaults } from '@/store/drawingDefaultsStore';
 import { useOrderToolStore } from '@/store/orderToolStore';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { overlaySnapshot, createPersistentOverlay } from '@/lib/overlays';
+import { splitKey } from '@/lib/drawingsData';
+import { computeVisible, type TfVisibility } from '@/lib/tfVisibility';
+import type { Timeframe } from '@/store/replayStore';
 
 // Every mutation you can perform on a selected drawing, in ONE place — so the
 // context menu, floating toolbar, and settings dialog all behave identically.
@@ -19,6 +23,14 @@ export interface DrawingTarget {
 // order across reloads).
 let zTop = 100;
 let zBottom = -100;
+
+/** The timeframe of the pane a drawing lives on (for per-TF visibility). */
+function paneTimeframe(paneKey: string | null): Timeframe | null {
+  if (!paneKey) return null;
+  const [tabId, paneId] = splitKey(paneKey);
+  const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === tabId);
+  return tab?.layout.panes.find((p) => p.id === paneId)?.timeframe ?? null;
+}
 
 /** Style patch that recolors whatever figure types a tool uses. */
 export function colorPatch(color: string): Record<string, unknown> {
@@ -55,7 +67,22 @@ export function drawingActions({ chart, overlayId, paneKey }: DrawingTarget) {
     },
 
     toggleLock: () => override({ lock: !live()?.lock }),
-    toggleHidden: () => override({ visible: live()?.visible === false }),
+    isHidden: () => ext().hidden === true,
+    getTfVisibility: () => ext().tfVisibility as TfVisibility | undefined,
+    /** Hard hide/show (persisted in extendData; recomputes the live visible). */
+    setHidden: (hidden: boolean) => {
+      const e = { ...ext(), hidden };
+      override({ extendData: e, visible: computeVisible(e, paneTimeframe(paneKey)) });
+    },
+    toggleHidden: () => {
+      const e = { ...ext(), hidden: !(ext().hidden === true) };
+      override({ extendData: e, visible: computeVisible(e, paneTimeframe(paneKey)) });
+    },
+    /** Per-timeframe visibility config; re-evaluates against this pane's TF. */
+    setTfVisibility: (tfVisibility: TfVisibility) => {
+      const e = { ...ext(), tfVisibility };
+      override({ extendData: e, visible: computeVisible(e, paneTimeframe(paneKey)) });
+    },
     bringToFront: () => override({ zLevel: ++zTop }),
     sendToBack: () => override({ zLevel: --zBottom }),
 

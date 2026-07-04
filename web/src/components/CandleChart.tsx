@@ -104,7 +104,7 @@ export function CandleChart({
     prevFirstTimeRef.current = null;
     if (chart) {
       useChartStore.getState().registerChart(paneId, chart, el);
-      restoreOverlays(chart, `${tabId}:${paneId}`);
+      restoreOverlays(chart, `${tabId}:${paneId}`, timeframe);
     }
 
     // Resize the chart when its pane changes size (window resize OR layout change).
@@ -155,7 +155,7 @@ export function CandleChart({
       dispose(el);
       chartRef.current = null;
     };
-  }, [pricePrecision, paneId, tabId]);
+  }, [pricePrecision, paneId, tabId, timeframe]);
 
   // Re-apply chart styles when the theme changes (no remount).
   useEffect(() => {

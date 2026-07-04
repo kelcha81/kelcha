@@ -73,6 +73,7 @@ export function FloatingDrawingToolbar() {
   const lineColor = ((overlay.styles as { line?: { color?: string } } | null)?.line?.color) ?? COLORS[0];
   const templates = templatesByTool[overlay.name] ?? {};
   const isText = overlay.name === TEXT_NOTE || overlay.name === CALLOUT;
+  const hidden = ((overlay.extendData ?? {}) as { hidden?: boolean }).hidden === true;
 
   const openSettings = () =>
     useDrawingSettingsStore.getState().openSettings({ ...target, name: overlay.name });
@@ -194,9 +195,9 @@ export function FloatingDrawingToolbar() {
           {overlay.lock ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
         </button>
       </Tooltip>
-      <Tooltip label={overlay.visible === false ? 'Show' : 'Hide'}>
+      <Tooltip label={hidden ? 'Show' : 'Hide'}>
         <button type="button" onClick={() => run(a.toggleHidden)} className={btn}>
-          {overlay.visible === false ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+          {hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
         </button>
       </Tooltip>
       <Tooltip label="Delete">

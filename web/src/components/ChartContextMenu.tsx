@@ -4,10 +4,11 @@ import { useRef, type ReactNode } from 'react';
 import { SkipForward, Minus, Type, Camera, Scale, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useChartStore } from '@/store/chartStore';
 import { useReplayStore } from '@/store/replayStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useDrawingsStore } from '@/store/drawingsStore';
 import { useToolbarStore } from '@/store/toolbarStore';
-import { createPersistentOverlay, overrideSavedOverlays } from '@/lib/overlays';
+import { createPersistentOverlay, recomputeHideAll } from '@/lib/overlays';
 import { TEXT_NOTE } from '@/lib/overlays/textNote';
 import { capturePane } from '@/lib/chartShot';
 import { confirm } from '@/components/ui/confirm';
@@ -94,10 +95,9 @@ export function ChartContextMenu({ tabId, paneId, symbol, children }: { tabId: s
   const toggleHideAll = () => {
     const next = !useToolbarStore.getState().hideAll;
     useToolbarStore.getState().setHideAll(next);
-    const charts = Object.fromEntries(
-      Object.entries(useChartStore.getState().charts).map(([id, c]) => [id, c.chart])
-    );
-    overrideSavedOverlays(charts, tabId, { visible: !next });
+    const charts = Object.fromEntries(Object.entries(useChartStore.getState().charts).map(([id, c]) => [id, c.chart]));
+    const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === tabId);
+    recomputeHideAll(charts, tabId, next, (paneId) => tab?.layout.panes.find((p) => p.id === paneId)?.timeframe ?? null);
   };
 
   const clearDrawings = async () => {

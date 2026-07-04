@@ -3,6 +3,8 @@ import { useDrawingsStore, type SavedOverlay } from '@/store/drawingsStore';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useDrawingSettingsStore } from '@/store/drawingSettingsStore';
 import { useToolbarStore, type MagnetMode } from '@/store/toolbarStore';
+import { computeVisible } from '@/lib/tfVisibility';
+import type { Timeframe } from '@/store/replayStore';
 
 // Create a KLineChart overlay wired to persist itself: it saves its points on
 // draw/move end, removes itself from the store when removed, and removes on
@@ -22,10 +24,11 @@ export function overlaySnapshot(o: Overlay): SavedOverlay {
     id: o.id,
     name: o.name,
     points: o.points,
+    // Hide state (hard "hidden" + per-timeframe visibility) rides in extendData,
+    // so the live overlay's computed `visible` is never persisted as truth.
     extendData: o.extendData as Record<string, unknown> | undefined,
     styles: o.styles as Record<string, unknown> | undefined,
     ...(o.lock ? { lock: true } : {}),
-    ...(o.visible === false ? { visible: false } : {}),
     ...(typeof o.zLevel === 'number' ? { zLevel: o.zLevel } : {})
   };
 }
@@ -103,10 +106,13 @@ export function createPersistentOverlay(
  * the current toolbar drawing state (magnet mode, lock-all, hide-all). A
  * drawing's own saved styles always win over tool defaults on restore.
  */
-export function restoreOverlays(chart: Chart, key: string): void {
+export function restoreOverlays(chart: Chart, key: string, timeframe?: Timeframe): void {
   const saved = useDrawingsStore.getState().drawings[key] ?? [];
   const tb = useToolbarStore.getState();
   for (const o of saved) {
+    // Visibility resolves the drawing's hidden flag + per-timeframe config
+    // against THIS pane's timeframe (the chart remounts on TF change).
+    const shown = computeVisible(o.extendData, timeframe ?? null);
     createPersistentOverlay(chart, key, {
       name: o.name,
       points: o.points,
@@ -115,9 +121,9 @@ export function restoreOverlays(chart: Chart, key: string): void {
       styles: o.styles,
       zLevel: o.zLevel,
       mode: magnetToMode(tb.magnet),
-      // Per-drawing lock/hide OR the global toolbar toggles.
+      // Per-drawing lock OR the global toolbar toggle.
       lock: o.lock || tb.lockAll || undefined,
-      visible: tb.hideAll ? false : o.visible === false ? false : undefined
+      visible: tb.hideAll || !shown ? false : undefined
     });
   }
 }
@@ -137,6 +143,28 @@ export function resyncOverlays(
     const key = `${tabId}:${paneId}`;
     for (const o of prev[key] ?? []) chart.removeOverlay({ id: o.id });
     restoreOverlays(chart, key);
+  }
+}
+
+/**
+ * Global hide/show for every saved drawing on a tab. Hiding forces
+ * visible:false; showing restores each drawing's OWN computed visibility
+ * (hard-hide + per-timeframe rules) rather than a blanket visible:true.
+ * `tfByPane` resolves a paneId to its timeframe (caller supplies it so this
+ * module stays free of the workspace store).
+ */
+export function recomputeHideAll(
+  charts: Record<string, Chart>,
+  tabId: string,
+  hide: boolean,
+  tfByPane: (paneId: string) => Timeframe | null
+): void {
+  const drawings = useDrawingsStore.getState().drawings;
+  for (const [paneId, chart] of Object.entries(charts)) {
+    const tf = tfByPane(paneId);
+    for (const o of drawings[`${tabId}:${paneId}`] ?? []) {
+      chart.overrideOverlay({ id: o.id, visible: hide ? false : computeVisible(o.extendData, tf) });
+    }
   }
 }
 

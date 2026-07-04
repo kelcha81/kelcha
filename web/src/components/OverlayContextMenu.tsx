@@ -60,6 +60,7 @@ export function OverlayContextMenu() {
 
   if (!open || !chart || !overlay) return null;
 
+  const hidden = ((overlay.extendData ?? {}) as { hidden?: boolean }).hidden === true;
   const a = drawingActions({ chart, overlayId: overlay.id, paneKey });
   const act = (fn: () => void) => {
     fn();
@@ -95,7 +96,7 @@ export function OverlayContextMenu() {
       <div className="my-1 h-px bg-slate-800" />
       <Item icon={Copy} label="Clone" onClick={() => act(a.clone)} />
       <Item icon={overlay.lock ? Unlock : Lock} label={overlay.lock ? 'Unlock' : 'Lock'} onClick={() => act(a.toggleLock)} />
-      <Item icon={overlay.visible === false ? Eye : EyeOff} label={overlay.visible === false ? 'Show' : 'Hide'} onClick={() => act(a.toggleHidden)} />
+      <Item icon={hidden ? Eye : EyeOff} label={hidden ? 'Show' : 'Hide'} onClick={() => act(a.toggleHidden)} />
       <Item icon={ArrowUp} label="Bring to front" onClick={() => act(a.bringToFront)} />
       <Item icon={ArrowDown} label="Send to back" onClick={() => act(a.sendToBack)} />
       <div className="my-1 h-px bg-slate-800" />

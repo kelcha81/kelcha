@@ -11,6 +11,7 @@ import { TEXT_NOTE } from '@/lib/overlays/textNote';
 import { CALLOUT } from '@/lib/overlays/callout';
 import { FIB_TOOL, DEFAULT_FIB_RATIOS, fibRatios } from '@/lib/overlays/fibTool';
 import { FIB_EXTENSION, DEFAULT_EXT_RATIOS } from '@/lib/overlays/fibExtension';
+import { TF_UNITS, defaultTfVisibility, type TfVisibility } from '@/lib/tfVisibility';
 
 const COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7', '#f97316', '#ffffff', '#64748b'];
 const WIDTHS = [1, 2, 3, 4];
@@ -187,22 +188,67 @@ export function DrawingSettingsModal() {
           </div>
         )}
 
-        {tab === 'visibility' && (
-          <div className="space-y-2">
-            <label className="flex items-center justify-between text-sm text-slate-300">
-              Locked (ignores mouse edits)
-              <input type="checkbox" checked={!!overlay.lock} onChange={() => run(a.toggleLock)} className="h-4 w-4 accent-blue-600" />
-            </label>
-            <label className="flex items-center justify-between text-sm text-slate-300">
-              Hidden
-              <input type="checkbox" checked={overlay.visible === false} onChange={() => run(a.toggleHidden)} className="h-4 w-4 accent-blue-600" />
-            </label>
-            <div className="flex gap-2 border-t border-slate-800 pt-2">
-              <Button size="xs" onClick={() => run(a.bringToFront)}>Bring to front</Button>
-              <Button size="xs" onClick={() => run(a.sendToBack)}>Send to back</Button>
+        {tab === 'visibility' && (() => {
+          const cfg: TfVisibility = { ...defaultTfVisibility(), ...(a.getTfVisibility() ?? {}) };
+          const patchUnit = (unit: keyof TfVisibility, patch: Partial<{ on: boolean; from: number; to: number }>) => {
+            const cur = cfg[unit] ?? { on: true, from: 1, to: 60 };
+            run(() => a.setTfVisibility({ ...cfg, [unit]: { ...cur, ...patch } }));
+          };
+          return (
+            <div className="space-y-3">
+              <label className="flex items-center justify-between text-sm text-slate-300">
+                Locked (ignores mouse edits)
+                <input type="checkbox" checked={!!overlay.lock} onChange={() => run(a.toggleLock)} className="h-4 w-4 accent-blue-600" />
+              </label>
+              <label className="flex items-center justify-between text-sm text-slate-300">
+                Hidden (all timeframes)
+                <input type="checkbox" checked={a.isHidden()} onChange={() => run(a.toggleHidden)} className="h-4 w-4 accent-blue-600" />
+              </label>
+
+              <div className="border-t border-slate-800 pt-2">
+                <div className="mb-1 text-[10px] uppercase text-slate-500">Visible on timeframes</div>
+                <div className="space-y-1.5">
+                  {TF_UNITS.map(({ unit, label }) => {
+                    const g = cfg[unit] ?? { on: true, from: 1, to: 60 };
+                    return (
+                      <div key={unit} className="flex items-center gap-2 text-xs">
+                        <label className="flex w-24 items-center gap-1.5 text-slate-300">
+                          <input type="checkbox" checked={g.on} onChange={(e) => patchUnit(unit, { on: e.target.checked })} className="h-3.5 w-3.5 accent-blue-600" />
+                          {label}
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={g.from}
+                          disabled={!g.on}
+                          onChange={(e) => patchUnit(unit, { from: Number(e.target.value) })}
+                          className={`w-16 ${field} disabled:opacity-40`}
+                        />
+                        <span className="text-slate-500">to</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={g.to}
+                          disabled={!g.on}
+                          onChange={(e) => patchUnit(unit, { to: Number(e.target.value) })}
+                          className={`w-16 ${field} disabled:opacity-40`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-1 text-[10px] text-slate-500">
+                  e.g. Minutes 15–20 + Hours 1–2 shows this drawing only on the 15m and 1h charts.
+                </div>
+              </div>
+
+              <div className="flex gap-2 border-t border-slate-800 pt-2">
+                <Button size="xs" onClick={() => run(a.bringToFront)}>Bring to front</Button>
+                <Button size="xs" onClick={() => run(a.sendToBack)}>Send to back</Button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       <div className="flex justify-end border-t border-slate-800 p-3">

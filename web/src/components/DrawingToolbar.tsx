@@ -7,7 +7,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useDrawingsStore } from '@/store/drawingsStore';
 import { useToolbarStore } from '@/store/toolbarStore';
 import { useDrawingDefaultsStore } from '@/store/drawingDefaultsStore';
-import { createPersistentOverlay, magnetToMode, overrideSavedOverlays } from '@/lib/overlays';
+import { createPersistentOverlay, magnetToMode, overrideSavedOverlays, recomputeHideAll } from '@/lib/overlays';
 import { TOOLS, TOOL_GROUPS, toolById, registerToolOverlays, type ToolDef, type ToolGroup } from '@/lib/tools/registry';
 import { registerHotkey, comboLabel } from '@/lib/hotkeys';
 import { MenuPopover } from '@/components/ui/menu';
@@ -133,7 +133,8 @@ export function DrawingToolbar() {
   const onHideAll = () => {
     const next = !hideAll;
     setHideAll(next);
-    overrideSavedOverlays(chartMap(), activeTabId, { visible: !next });
+    const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === activeTabId);
+    recomputeHideAll(chartMap(), activeTabId, next, (paneId) => tab?.layout.panes.find((p) => p.id === paneId)?.timeframe ?? null);
   };
 
   const clearAll = async () => {
