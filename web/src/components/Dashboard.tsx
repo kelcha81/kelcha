@@ -49,7 +49,9 @@ function PaneView({ tabId, pane, symbol }: { tabId: string; pane: Pane; symbol: 
   return (
     <div
       onMouseDown={() => setActivePane(pane.id)}
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded border ${
+      // h-full matters: inside a resizable Panel (not a grid cell) the pane
+      // doesn't auto-stretch — without it the chart collapses to ~0 height.
+      className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded border ${
         active ? 'border-blue-500' : 'border-slate-800'
       }`}
     >

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { init, dispose, type Chart, type KLineData } from 'klinecharts';
+import { init, dispose, TooltipShowRule, type Chart, type KLineData } from 'klinecharts';
 import type { Candle, Timeframe } from '@/store/replayStore';
 import { useReplayStore } from '@/store/replayStore';
 import { useActiveTab } from '@/store/workspaceStore';
@@ -41,7 +41,9 @@ function buildStyles(t: ChartTheme) {
         downWickColor: t.down
       },
       priceMark: { last: { text: { color: '#ffffff', family: font } } },
-      tooltip: { text: { family: font } }
+      // Built-in OHLC readout is OFF — the OhlcLegend component replaces it
+      // (both render top-left and printed over each other).
+      tooltip: { showRule: TooltipShowRule.None, text: { family: font } }
     },
     xAxis: {
       axisLine: { color: t.axis },
