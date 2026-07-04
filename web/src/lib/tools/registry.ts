@@ -18,6 +18,16 @@ import {
   Spline,
   Target,
   PencilRuler,
+  Circle,
+  Triangle,
+  MoveHorizontal,
+  Frame,
+  Radius,
+  Info,
+  GitFork,
+  Flag,
+  ArrowUp,
+  ArrowDown,
   type LucideIcon
 } from 'lucide-react';
 import { registerFibTool, FIB_TOOL } from '@/lib/overlays/fibTool';
@@ -30,6 +40,10 @@ import { registerCallout, CALLOUT } from '@/lib/overlays/callout';
 import { registerFibExtension, FIB_EXTENSION } from '@/lib/overlays/fibExtension';
 import { registerPositionDrawing, POSITION_DRAWING } from '@/lib/overlays/positionDrawing';
 import { registerMeasure, MEASURE } from '@/lib/overlays/measure';
+import { registerCircle, registerTriangle, CIRCLE, TRIANGLE } from '@/lib/overlays/shapes';
+import { registerRanges, DATE_RANGE, PRICE_RANGE, DATE_PRICE_RANGE } from '@/lib/overlays/ranges';
+import { registerLines2, TREND_ANGLE_TOOL, INFO_LINE_TOOL, PITCHFORK_TOOL } from '@/lib/overlays/lines2';
+import { registerMarkers, FLAG_TOOL, ARROW_UP_TOOL, ARROW_DOWN_TOOL } from '@/lib/overlays/markers';
 
 // Declarative drawing-tool registry: the DrawingToolbar renders whatever is
 // here — adding a tool = one entry (+ overlay registration if custom).
@@ -58,25 +72,36 @@ export const TOOLS: ToolDef[] = [
   { id: 'horizontalRay', label: 'Horizontal ray', group: 'Lines', overlay: 'horizontalRayLine', Icon: MoveRight },
   { id: 'vertical', label: 'Vertical line', group: 'Lines', overlay: 'verticalStraightLine', Icon: MoveVertical, shortcut: 'alt+v' },
   { id: 'cross', label: 'Cross line', group: 'Lines', overlay: CROSS_LINE, Icon: Crosshair },
+  { id: 'trendAngle', label: 'Trend angle', group: 'Lines', overlay: TREND_ANGLE_TOOL, Icon: Radius },
+  { id: 'infoLine', label: 'Info line', group: 'Lines', overlay: INFO_LINE_TOOL, Icon: Info },
   { id: 'price', label: 'Price line', group: 'Lines', overlay: 'priceLine', Icon: DollarSign },
   // Channels
   { id: 'channel', label: 'Parallel channel', group: 'Channels', overlay: 'priceChannelLine', Icon: Equal },
   { id: 'parallel', label: 'Parallel lines', group: 'Channels', overlay: 'parallelStraightLine', Icon: AlignJustify },
+  { id: 'pitchfork', label: 'Pitchfork', group: 'Channels', overlay: PITCHFORK_TOOL, Icon: GitFork },
   // Fib
   { id: 'fib', label: 'Fib retracement', group: 'Fib', overlay: FIB_TOOL, Icon: Ruler, shortcut: 'alt+f' },
   { id: 'fibExtension', label: 'Fib extension (trend)', group: 'Fib', overlay: FIB_EXTENSION, Icon: Spline },
   // Shapes
   { id: 'rectangle', label: 'Rectangle', group: 'Shapes', overlay: RECTANGLE, Icon: Square, shortcut: 'alt+r' },
+  { id: 'circle', label: 'Circle', group: 'Shapes', overlay: CIRCLE, Icon: Circle },
+  { id: 'triangle', label: 'Triangle', group: 'Shapes', overlay: TRIANGLE, Icon: Triangle },
   { id: 'arrow', label: 'Arrow', group: 'Shapes', overlay: ARROW, Icon: ArrowUpRight },
   // Annotations
   { id: 'text', label: 'Text note', group: 'Annotations', overlay: TEXT_NOTE, Icon: Type },
   { id: 'callout', label: 'Callout', group: 'Annotations', overlay: CALLOUT, Icon: MessageSquare },
   { id: 'priceLabel', label: 'Price label', group: 'Annotations', overlay: PRICE_TAG, Icon: Tag },
+  { id: 'flag', label: 'Flag mark', group: 'Annotations', overlay: FLAG_TOOL, Icon: Flag },
+  { id: 'arrowUp', label: 'Arrow mark up', group: 'Annotations', overlay: ARROW_UP_TOOL, Icon: ArrowUp },
+  { id: 'arrowDown', label: 'Arrow mark down', group: 'Annotations', overlay: ARROW_DOWN_TOOL, Icon: ArrowDown },
   // Position: THE long/short R:R tool — a persisted drawing; right-click →
   // "Apply to order ticket" loads its levels into the trading panel.
   { id: 'position', label: 'Long/Short position', group: 'Position', overlay: POSITION_DRAWING, Icon: Target },
-  // Measure
-  { id: 'measure', label: 'Measure', group: 'Measure', overlay: MEASURE, Icon: PencilRuler, shortcut: 'shift+m', ephemeral: true }
+  // Measure — ephemeral Shift+M + persisted range measurers
+  { id: 'measure', label: 'Measure', group: 'Measure', overlay: MEASURE, Icon: PencilRuler, shortcut: 'shift+m', ephemeral: true },
+  { id: 'dateRange', label: 'Date range', group: 'Measure', overlay: DATE_RANGE, Icon: MoveHorizontal },
+  { id: 'priceRange', label: 'Price range', group: 'Measure', overlay: PRICE_RANGE, Icon: MoveVertical },
+  { id: 'datePriceRange', label: 'Date & price range', group: 'Measure', overlay: DATE_PRICE_RANGE, Icon: Frame }
 ];
 
 export const toolById = (id: string): ToolDef | undefined => TOOLS.find((t) => t.id === id);
@@ -93,4 +118,9 @@ export function registerToolOverlays(): void {
   registerFibExtension();
   registerPositionDrawing();
   registerMeasure();
+  registerCircle();
+  registerTriangle();
+  registerRanges();
+  registerLines2();
+  registerMarkers();
 }
