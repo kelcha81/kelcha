@@ -17,6 +17,7 @@ import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/ob
 import { saveJournalEntry } from '@/lib/journal';
 import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
+import { useReplayStore } from '@/store/replayStore';
 import { Modal } from '@/components/ui/dialog';
 
 // A trade from any source (ICT backtest or manual papertrade), normalized to the
@@ -62,6 +63,7 @@ interface Capture {
   tf: string;
   dataUrl: string;
   name: string;
+  note: string; // annotation written below the screenshot in the note
 }
 // Editable keys shown when the user has no custom template (mirrors the built-in).
 const DEFAULT_KEYS = ['killzone', 'po3_phase', 'setup_grade', 'confidence', LIST_KEY];
@@ -97,11 +99,15 @@ export function JournalModal({
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
   const [editing, setEditing] = useState<{ name: string; baseMd: string } | null>(null);
-  // Backtest ASR (historical) vs Live/Daily ASR (forward test). Drives the folder,
-  // template, Document type / Trade Type, and filename.
-  const [tradeType, setTradeType] = useState<'Backtest' | 'Live'>('Backtest');
-  const folder = tradeType === 'Live' ? cfg.liveFolder : cfg.backtestFolder;
-  const templateFile = tradeType === 'Live' ? 'Daily ASR Template.md' : 'Backtesting ASR Template.md';
+  const folder = cfg.backtestFolder;
+  const templateFile = 'Backtesting ASR Template.md';
+  // The SESSION date being backtested (drives the filename + session-date
+  // frontmatter). Defaults to the trade's entry date, else the replay head —
+  // editable so you never have to guess what the note will be called.
+  const [sessionDate, setSessionDate] = useState(() => {
+    const ms = trade?.entryTime ?? useReplayStore.getState().currentTimestamp;
+    return ms ? new Date(ms).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+  });
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -112,8 +118,11 @@ export function JournalModal({
   const addCapture = (stage: 'pre' | 'post', tf: string, dataUrl: string) => {
     const id = Math.random().toString(36).slice(2, 8);
     const name = `${symbol}-${stage}-${tf}-${id}.png`.replace(/[^A-Za-z0-9._-]/g, '');
-    setCaptures((prev) => [...prev, { id, stage, tf, dataUrl, name }]);
+    setCaptures((prev) => [...prev, { id, stage, tf, dataUrl, name, note: '' }]);
   };
+
+  const setCaptureNote = (id: string, note: string) =>
+    setCaptures((prev) => prev.map((c) => (c.id === id ? { ...c, note } : c)));
 
   const captureFromChart = (stage: 'pre' | 'post', tf: string) => {
     const url = captureActivePane();
@@ -225,9 +234,10 @@ export function JournalModal({
       const listFields: Record<string, string[]> = editableKeys.includes(LIST_KEY) ? { [LIST_KEY]: indicators } : {};
       const scalarFields = Object.fromEntries(Object.entries(fields).filter(([k]) => k !== LIST_KEY));
 
-      // Each capture is written under <folder>/attachments and embedded by path.
+      // Each capture is written under <folder>/attachments and embedded by path,
+      // with its annotation directly below the screenshot.
       const relPath = (name: string) => [folder, ATTACH, name].filter(Boolean).join('/');
-      const asrCaptures = captures.map((c) => ({ stage: c.stage, tf: c.tf, path: relPath(c.name) }));
+      const asrCaptures = captures.map((c) => ({ stage: c.stage, tf: c.tf, path: relPath(c.name), note: c.note }));
       const images = captures.map((c) => ({ name: c.name, dataUrl: c.dataUrl }));
 
       let filename: string;
@@ -254,7 +264,7 @@ export function JournalModal({
           captures: asrCaptures,
           wentWell,
           improve,
-          tradeType
+          sessionDate
         }));
       } else {
         setMsg({ ok: false, text: 'Open an existing ASR to edit, or journal a trade from the trades table.' });
@@ -263,12 +273,22 @@ export function JournalModal({
       }
 
       if (toNotion) {
-        // Notion v1: page body carries the rendered ASR; screenshots stay local.
-        await notionJournal('journal', filename.replace(/\.md$/, ''), markdown);
+        // Captures upload to Notion via its File Upload API, captioned with
+        // the slot label + annotation.
+        await notionJournal(
+          'journal',
+          filename.replace(/\.md$/, ''),
+          markdown,
+          captures.map((c) => ({
+            name: c.name,
+            dataUrl: c.dataUrl,
+            caption: `${c.stage === 'pre' ? 'Plan' : 'Trade'} · ${c.tf}${c.note.trim() ? ` — ${c.note.trim()}` : ''}`
+          }))
+        );
       } else {
         await writeNote(folder, filename, markdown, images);
       }
-      if (user) await saveJournalEntry(user.uid, { filename, folder, kind: tradeType, markdown, captures: asrCaptures });
+      if (user) await saveJournalEntry(user.uid, { filename, folder, kind: 'Backtest', markdown, captures: asrCaptures });
       setMsg({ ok: true, text: toNotion ? `Saved ${filename.replace(/\.md$/, '')} to Notion.` : `Saved ${filename} to your vault.` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -333,23 +353,6 @@ export function JournalModal({
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          <div className="flex rounded border border-slate-700 text-xs">
-            {(['Backtest', 'Live'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                disabled={!!editing}
-                onClick={() => {
-                  setTradeType(t);
-                  setEditing(null);
-                }}
-                className={`px-3 py-1 disabled:opacity-40 ${tradeType === t ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-              >
-                {t === 'Live' ? 'Live (forward test)' : 'Backtest'}
-              </button>
-            ))}
-          </div>
-
           {trade && !editing && (
             <div className="rounded border border-slate-800 p-2 text-[11px] text-slate-400">
               <span className={trade.side === 'short' ? 'text-red-400' : 'text-green-400'}>{trade.side}</span>{' '}
@@ -357,9 +360,21 @@ export function JournalModal({
               <span className={trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>
                 {(trade.pnl >= 0 ? '+' : '') + trade.pnl.toFixed(2)}
               </span>
-              . Writes a <span className="text-slate-300">{tradeType === 'Live' ? 'Daily ASR (Live)' : 'Backtest ASR'}</span>{' '}
-              the plugin parses as a closed {tradeType === 'Live' ? 'live' : 'backtest'} trade.
+              . Writes a <span className="text-slate-300">Backtest ASR</span> the plugin parses as a closed backtest trade.
             </div>
+          )}
+
+          {!editing && (
+            <label className="flex items-center gap-2 text-xs text-slate-400">
+              Backtest date
+              <input
+                type="date"
+                value={sessionDate}
+                onChange={(e) => setSessionDate(e.target.value)}
+                className={`${field} [color-scheme:dark]`}
+              />
+              <span className="text-[10px] text-slate-500">names the note ({symbol.toUpperCase()} Backtest ASR)</span>
+            </label>
           )}
 
           {!toNotion && (
@@ -399,12 +414,12 @@ export function JournalModal({
 
           <div className="text-[10px] text-slate-500">
             {toNotion
-              ? `Writing to Notion using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR fields.`
+              ? 'Writing to Notion using the built-in Backtest ASR fields.'
               : template === undefined
                 ? 'Reading template…'
                 : template
                   ? `Fields synced from your ${templateFile.replace(/\.md$/, '')}.`
-                  : `Using the built-in ${tradeType === 'Live' ? 'Daily' : 'Backtest'} ASR template (connect your vault in Settings to sync your own).`}
+                  : 'Using the built-in Backtest ASR template (connect your vault in Settings to sync your own).'}
           </div>
 
           <div className="grid grid-cols-2 gap-2">{editableKeys.map(renderField)}</div>
@@ -415,40 +430,47 @@ export function JournalModal({
               {SLOTS.map((slot) => {
                 const shots = captures.filter((c) => c.stage === slot.stage && c.tf === slot.tf);
                 return (
-                  <div key={slot.label} className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-xs text-slate-400">{slot.label}</span>
-                    <button
-                      type="button"
-                      onClick={() => captureFromChart(slot.stage, slot.tf)}
-                      title="Capture the active chart"
-                      className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
-                    >
-                      <Camera className="h-3 w-3" /> Capture
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => pickUpload(slot.stage, slot.tf)}
-                      title="Upload an image"
-                      className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
-                    >
-                      <Upload className="h-3 w-3" />
-                    </button>
-                    <div className="flex flex-wrap gap-1">
-                      {shots.map((s) => (
-                        <span key={s.id} className="group relative">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={s.dataUrl} alt={s.name} className="h-8 w-12 rounded border border-slate-700 object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removeCapture(s.id)}
-                            className="absolute -right-1 -top-1 hidden rounded-full bg-slate-900 text-red-400 group-hover:block"
-                            aria-label="Remove"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
+                  <div key={slot.label} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-20 shrink-0 text-xs text-slate-400">{slot.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => captureFromChart(slot.stage, slot.tf)}
+                        title="Capture the active chart"
+                        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
+                      >
+                        <Camera className="h-3 w-3" /> Capture
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => pickUpload(slot.stage, slot.tf)}
+                        title="Upload an image"
+                        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
+                      >
+                        <Upload className="h-3 w-3" />
+                      </button>
                     </div>
+                    {shots.map((s) => (
+                      <div key={s.id} className="ml-20 flex items-center gap-2 pl-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.dataUrl} alt={s.name} className="h-8 w-12 shrink-0 rounded border border-slate-700 object-cover" />
+                        <input
+                          type="text"
+                          value={s.note}
+                          placeholder="Note for this screenshot…"
+                          onChange={(e) => setCaptureNote(s.id, e.target.value)}
+                          className={`flex-1 ${field} py-0.5 text-xs`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeCapture(s.id)}
+                          className="shrink-0 rounded p-0.5 text-slate-500 hover:text-red-400"
+                          aria-label="Remove"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 );
               })}

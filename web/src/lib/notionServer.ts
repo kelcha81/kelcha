@@ -71,6 +71,39 @@ export async function notionContent(token: string): Promise<NotionContent> {
   };
 }
 
+export interface NotionImage {
+  name: string;
+  dataUrl: string; // data:image/png;base64,…
+  caption?: string;
+}
+
+/** Upload one image via Notion's File Upload API; returns the file_upload id.
+ *  (Two steps: create the upload object, then send the bytes as multipart.) */
+async function uploadImage(token: string, img: NotionImage): Promise<string> {
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/.exec(img.dataUrl);
+  if (!m) throw new Error(`unsupported image data for ${img.name}`);
+  const contentType = m[1];
+  const bytes = Buffer.from(m[2], 'base64');
+  if (bytes.length > 19 * 1024 * 1024) throw new Error(`${img.name} exceeds Notion's 20MB single-part limit`);
+
+  const created = await notion(token, 'file_uploads', {
+    method: 'POST',
+    body: JSON.stringify({ filename: img.name, content_type: contentType })
+  });
+
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(bytes)], { type: contentType }), img.name);
+  // Raw fetch: multipart must set its own boundary (no JSON Content-Type).
+  const res = await fetch(`https://api.notion.com/v1/file_uploads/${created.id}/send`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Notion-Version': NOTION_VERSION },
+    body: form
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `Notion upload failed (${res.status})`);
+  return created.id as string;
+}
+
 async function titleProperty(token: string, dbId: string): Promise<string> {
   const db = await notion(token, `databases/${dbId}`);
   for (const [name, p] of Object.entries(db.properties || {})) {
@@ -97,14 +130,39 @@ function toBlocks(markdown: string) {
   return blocks;
 }
 
-export async function notionCreatePage(token: string, dbId: string, title: string, markdown: string): Promise<string> {
+export async function notionCreatePage(
+  token: string,
+  dbId: string,
+  title: string,
+  markdown: string,
+  images: NotionImage[] = []
+): Promise<string> {
   const titleName = await titleProperty(token, dbId);
+  const blocks = toBlocks(markdown);
+
+  // Screenshots: upload via the File Upload API, then append image blocks
+  // (with the slot label / annotation as the caption). Respect the 100-child
+  // cap on page create.
+  const room = Math.max(0, 100 - blocks.length);
+  for (const img of images.slice(0, room)) {
+    const id = await uploadImage(token, img);
+    blocks.push({
+      object: 'block',
+      type: 'image',
+      image: {
+        type: 'file_upload',
+        file_upload: { id },
+        caption: img.caption ? [{ type: 'text', text: { content: img.caption.slice(0, 1900) } }] : []
+      }
+    });
+  }
+
   const page = await notion(token, 'pages', {
     method: 'POST',
     body: JSON.stringify({
       parent: { database_id: dbId },
       properties: { [titleName]: { title: [{ text: { content: title.slice(0, 1900) } }] } },
-      children: toBlocks(markdown)
+      children: blocks
     })
   });
   return page.id;

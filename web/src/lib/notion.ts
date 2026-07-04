@@ -39,5 +39,15 @@ export interface NotionContent {
 
 export const notionListContent = () =>
   authed('/api/notion/databases').then((d) => ({ databases: d.databases ?? [], pages: d.pages ?? 0 }) as NotionContent);
-export const notionJournal = (kind: 'journal' | 'forecast', title: string, markdown: string) =>
-  authed('/api/notion/journal', { method: 'POST', body: JSON.stringify({ kind, title, markdown }) });
+export interface NotionJournalImage {
+  name: string;
+  dataUrl: string;
+  caption?: string;
+}
+
+export const notionJournal = (
+  kind: 'journal' | 'forecast',
+  title: string,
+  markdown: string,
+  images: NotionJournalImage[] = []
+) => authed('/api/notion/journal', { method: 'POST', body: JSON.stringify({ kind, title, markdown, images }) });

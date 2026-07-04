@@ -10,6 +10,7 @@ import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/ob
 import { saveForecastEntry } from '@/lib/journal';
 import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
+import { useReplayStore } from '@/store/replayStore';
 import { Modal } from '@/components/ui/dialog';
 
 const ATTACH = 'attachments';
@@ -25,6 +26,7 @@ interface Capture {
   tf: string;
   dataUrl: string;
   name: string;
+  note: string; // annotation written below the screenshot in the note
 }
 
 /** Create a Forecast (pre-trade plan) note in the Obsidian vault. */
@@ -35,6 +37,12 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const toNotion = cfg.journalTarget === 'notion';
 
   const [horizon, setHorizon] = useState<ForecastHorizon>('Daily');
+  // The date the forecast is FOR — in a backtest that's the replay-head date,
+  // not today. Drives the filename + `date` frontmatter; editable.
+  const [forecastDate, setForecastDate] = useState(() => {
+    const ms = useReplayStore.getState().currentTimestamp;
+    return ms ? new Date(ms).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+  });
   const [template, setTemplate] = useState<string | null | undefined>(undefined);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [targets, setTargets] = useState(''); // liquidity_targets, one per line/comma
@@ -117,8 +125,10 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   const addCapture = (tf: string, dataUrl: string) => {
     const id = Math.random().toString(36).slice(2, 8);
     const name = `${symbol}-forecast-${tf}-${id}.png`.replace(/[^A-Za-z0-9._-]/g, '');
-    setCaptures((prev) => [...prev, { id, tf, dataUrl, name }]);
+    setCaptures((prev) => [...prev, { id, tf, dataUrl, name, note: '' }]);
   };
+  const setCaptureNote = (id: string, note: string) =>
+    setCaptures((prev) => prev.map((c) => (c.id === id ? { ...c, note } : c)));
   const captureFromChart = (tf: string) => {
     const url = captureActivePane();
     if (!url) return setMsg({ ok: false, text: 'No chart to capture — open a chart pane first.' });
@@ -148,7 +158,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
     setMsg(null);
     try {
       const relPath = (name: string) => [cfg.forecastFolder, ATTACH, name].filter(Boolean).join('/');
-      const fcCaptures = captures.map((c) => ({ tf: c.tf, path: relPath(c.name) }));
+      const fcCaptures = captures.map((c) => ({ tf: c.tf, path: relPath(c.name), note: c.note }));
       const images = captures.map((c) => ({ name: c.name, dataUrl: c.dataUrl }));
       const list = targets
         .split(/[\n,]/)
@@ -163,12 +173,22 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
         filename = editing.name;
         markdown = updateForecast(editing.baseMd, { fields, listFields, captures: fcCaptures });
       } else {
-        ({ filename, markdown } = buildForecast({ template, symbol, horizon, fields, listFields, captures: fcCaptures }));
+        ({ filename, markdown } = buildForecast({ template, symbol, horizon, fields, listFields, captures: fcCaptures, date: forecastDate }));
       }
 
       if (toNotion) {
-        // Notion v1: page body carries the rendered forecast; screenshots stay local.
-        await notionJournal('forecast', filename.replace(/\.md$/, ''), markdown);
+        // Captures upload to Notion via its File Upload API, captioned with
+        // the timeframe + annotation.
+        await notionJournal(
+          'forecast',
+          filename.replace(/\.md$/, ''),
+          markdown,
+          captures.map((c) => ({
+            name: c.name,
+            dataUrl: c.dataUrl,
+            caption: `${c.tf}${c.note.trim() ? ` — ${c.note.trim()}` : ''}`
+          }))
+        );
       } else {
         await writeNote(cfg.forecastFolder, filename, markdown, images);
       }
@@ -233,18 +253,32 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          <div className="flex rounded border border-slate-700 text-xs">
-            {(['Daily', 'Weekly'] as ForecastHorizon[]).map((h) => (
-              <button
-                key={h}
-                type="button"
-                disabled={!!editing}
-                onClick={() => setHorizon(h)}
-                className={`px-3 py-1 disabled:opacity-40 ${horizon === h ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-              >
-                {h} Forecast
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <div className="flex rounded border border-slate-700 text-xs">
+              {(['Daily', 'Weekly'] as ForecastHorizon[]).map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  disabled={!!editing}
+                  onClick={() => setHorizon(h)}
+                  className={`px-3 py-1 disabled:opacity-40 ${horizon === h ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                >
+                  {h} Forecast
+                </button>
+              ))}
+            </div>
+            {!editing && (
+              <label className="flex items-center gap-2 text-xs text-slate-400">
+                For date
+                <input
+                  type="date"
+                  value={forecastDate}
+                  onChange={(e) => setForecastDate(e.target.value)}
+                  className={`${field} [color-scheme:dark]`}
+                  title="The session this forecast is for (defaults to the replay head) — names the note"
+                />
+              </label>
+            )}
           </div>
 
           {!toNotion && (
@@ -300,40 +334,47 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
               {SLOTS.map((tf) => {
                 const shots = captures.filter((c) => c.tf === tf);
                 return (
-                  <div key={tf} className="flex items-center gap-2">
-                    <span className="w-20 shrink-0 text-xs text-slate-400">{tf}</span>
-                    <button
-                      type="button"
-                      onClick={() => captureFromChart(tf)}
-                      title="Capture the active chart"
-                      className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
-                    >
-                      <Camera className="h-3 w-3" /> Capture
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => pickUpload(tf)}
-                      title="Upload an image"
-                      className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
-                    >
-                      <Upload className="h-3 w-3" />
-                    </button>
-                    <div className="flex flex-wrap gap-1">
-                      {shots.map((s) => (
-                        <span key={s.id} className="group relative">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={s.dataUrl} alt={s.name} className="h-8 w-12 rounded border border-slate-700 object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removeCapture(s.id)}
-                            className="absolute -right-1 -top-1 hidden rounded-full bg-slate-900 text-red-400 group-hover:block"
-                            aria-label="Remove"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
+                  <div key={tf} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-20 shrink-0 text-xs text-slate-400">{tf}</span>
+                      <button
+                        type="button"
+                        onClick={() => captureFromChart(tf)}
+                        title="Capture the active chart"
+                        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
+                      >
+                        <Camera className="h-3 w-3" /> Capture
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => pickUpload(tf)}
+                        title="Upload an image"
+                        className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200 hover:bg-slate-700"
+                      >
+                        <Upload className="h-3 w-3" />
+                      </button>
                     </div>
+                    {shots.map((s) => (
+                      <div key={s.id} className="ml-20 flex items-center gap-2 pl-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.dataUrl} alt={s.name} className="h-8 w-12 shrink-0 rounded border border-slate-700 object-cover" />
+                        <input
+                          type="text"
+                          value={s.note}
+                          placeholder="Note for this screenshot…"
+                          onChange={(e) => setCaptureNote(s.id, e.target.value)}
+                          className={`flex-1 ${field} py-0.5 text-xs`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeCapture(s.id)}
+                          className="shrink-0 rounded p-0.5 text-slate-500 hover:text-red-400"
+                          aria-label="Remove"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 );
               })}

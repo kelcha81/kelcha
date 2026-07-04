@@ -124,10 +124,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 <input value={cfg.backtestFolder} onChange={(e) => cfg.set({ backtestFolder: e.target.value })} className={`mt-0.5 w-full ${field}`} />
               </label>
               <label className="block text-xs text-slate-400">
-                Live ASR folder
-                <input value={cfg.liveFolder} onChange={(e) => cfg.set({ liveFolder: e.target.value })} className={`mt-0.5 w-full ${field}`} />
-              </label>
-              <label className="block text-xs text-slate-400">
                 Forecast folder
                 <input value={cfg.forecastFolder} onChange={(e) => cfg.set({ forecastFolder: e.target.value })} className={`mt-0.5 w-full ${field}`} />
               </label>

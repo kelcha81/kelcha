@@ -152,9 +152,14 @@ function escapeInline(s: string): string {
   return s.replace(/\r?\n/g, ' ').trim();
 }
 
+/** The embed written for a capture: the image plus its annotation below it. */
+function embedText(c: { path: string; note?: string }): string {
+  return c.note?.trim() ? `![[${c.path}]]\n\n${c.note.replace(/\r?\n/g, ' ').trim()}` : `![[${c.path}]]`;
+}
+
 // Fill `![]()` placeholders under any `## <tf>` heading, matched by timeframe
 // only (no Pre/Post sections) — used by Forecast notes. Leftovers go to "## Charts".
-export function embedByTimeframe(md: string, captures: { tf: string; path: string }[]): string {
+export function embedByTimeframe(md: string, captures: { tf: string; path: string; note?: string }[]): string {
   if (!captures.length) return md;
   const lines = md.split(/\r?\n/);
   const remaining = captures.slice();
@@ -167,12 +172,12 @@ export function embedByTimeframe(md: string, captures: { tf: string; path: strin
     }
     if (lines[i].trim() === '![]()') {
       const idx = remaining.findIndex((c) => tf.includes(c.tf.toLowerCase()));
-      if (idx >= 0) lines[i] = `![[${remaining.splice(idx, 1)[0].path}]]`;
+      if (idx >= 0) lines[i] = embedText(remaining.splice(idx, 1)[0]);
     }
   }
   let out = lines.join('\n');
   if (remaining.length) {
-    out += `\n\n## Charts\n\n${remaining.map((c) => `![[${c.path}]]`).join('\n\n')}\n`;
+    out += `\n\n## Charts\n\n${remaining.map(embedText).join('\n\n')}\n`;
   }
   return out;
 }
@@ -274,6 +279,9 @@ export interface BacktestAsrInput {
   wentWell?: string;
   improve?: string;
   tradeType?: 'Backtest' | 'Live'; // 'Live' → a Daily ASR for forward/live trades
+  /** ISO date of the session being BACKTESTED (the chart date, not today) —
+   *  drives the filename + backtest_session_date. Default: entryTime's date. */
+  sessionDate?: string;
 }
 
 /** A chart screenshot bound to a section + timeframe, written to the vault and
@@ -282,6 +290,7 @@ export interface AsrCapture {
   stage: 'pre' | 'post';
   tf: string; // Daily / H1 / M15 … matched against subheadings
   path: string; // vault-relative path to the written image
+  note?: string; // annotation written directly below the screenshot
 }
 
 // Fill the template's `![]()` image placeholders with `![[path]]` embeds under
@@ -307,12 +316,12 @@ function embedCaptures(md: string, captures: AsrCapture[]): string {
     }
     if (lines[i].trim() === '![]()') {
       const idx = remaining.findIndex((c) => c.stage === section && tf.includes(c.tf.toLowerCase()));
-      if (idx >= 0) lines[i] = `![[${remaining.splice(idx, 1)[0].path}]]`;
+      if (idx >= 0) lines[i] = embedText(remaining.splice(idx, 1)[0]);
     }
   }
   let out = lines.join('\n');
   if (remaining.length) {
-    out += `\n\n## Charts\n\n${remaining.map((c) => `![[${c.path}]]`).join('\n\n')}\n`;
+    out += `\n\n## Charts\n\n${remaining.map(embedText).join('\n\n')}\n`;
   }
   return out;
 }
@@ -332,7 +341,7 @@ export function buildBacktestAsr(input: BacktestAsrInput): { filename: string; m
   const pnlPips = ((input.exitPrice - input.entryPrice) * dir) / pip;
   const outcome = input.pnl > 0 ? 'Win' : input.pnl < 0 ? 'Loss' : 'Breakeven';
   const performedISO = isoOf(Date.now());
-  const sessionISO = isoOf(input.entryTime);
+  const sessionISO = input.sessionDate || isoOf(input.entryTime);
   // Live: journal date = the trade's date. Backtest: date = when it was performed.
   const dateISO = isLive ? sessionISO : performedISO;
 
@@ -365,9 +374,11 @@ export function buildBacktestAsr(input: BacktestAsrInput): { filename: string; m
     md = md.replace(/(### What can I improve on\s*\r?\n\s*\r?\n)1\./, `$11. ${escapeInline(input.improve)}`);
 
   const compact = input.symbol.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  // Backtest filenames are named for the SESSION being replayed (the chart
+  // date), not the day the review was written — that's what you search by.
   const filename = isLive
     ? `${ddmmyyyy(dateISO)} ${compact} ASR.md`
-    : `${ddmmyyyy(performedISO)} ${compact} Backtest ASR.md`;
+    : `${ddmmyyyy(sessionISO)} ${compact} Backtest ASR.md`;
   return { filename, markdown: md };
 }
 

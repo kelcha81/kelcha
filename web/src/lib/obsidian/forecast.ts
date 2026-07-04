@@ -149,9 +149,8 @@ function isoOf(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Monday of the current week (Mon–Sun), used for Weekly Forecast dates. */
-function mondayOfCurrentWeek(): Date {
-  const d = new Date();
+/** Monday of the week containing `d` (Mon–Sun), used for Weekly Forecast dates. */
+function mondayOfWeek(d: Date): Date {
   const day = d.getDay(); // 0 = Sun
   const diff = day === 0 ? -6 : 1 - day;
   const mon = new Date(d);
@@ -165,13 +164,17 @@ export interface ForecastInput {
   horizon: ForecastHorizon;
   fields?: Record<string, string>; // daily_bias, draw_on_liquidity, invalidation, custom…
   listFields?: Record<string, string[]>; // liquidity_targets, …
-  captures?: { tf: string; path: string }[];
+  captures?: { tf: string; path: string; note?: string }[];
+  /** ISO date the forecast is FOR — in a backtest that's the replay-head date,
+   *  not today. Weekly snaps to that week's Monday. Default: today. */
+  date?: string;
 }
 
 export function buildForecast(input: ForecastInput): { filename: string; markdown: string } {
   const fallback = input.horizon === 'Weekly' ? BUILT_IN_WEEKLY_FORECAST_TEMPLATE : BUILT_IN_DAILY_FORECAST_TEMPLATE;
   const tpl = input.template && input.template.includes('---') ? input.template : fallback;
-  const dateISO = input.horizon === 'Weekly' ? isoOf(mondayOfCurrentWeek()) : isoOf(new Date());
+  const base = input.date ? new Date(`${input.date}T12:00:00`) : new Date();
+  const dateISO = input.horizon === 'Weekly' ? isoOf(mondayOfWeek(base)) : isoOf(base);
 
   const values: Record<string, string> = {
     date: dateISO,
@@ -204,7 +207,7 @@ export function buildForecast(input: ForecastInput): { filename: string; markdow
  * (date/filename). Used by the open-and-edit (md → form → md) round-trip. */
 export function updateForecast(
   baseMd: string,
-  input: { fields?: Record<string, string>; listFields?: Record<string, string[]>; captures?: { tf: string; path: string }[] }
+  input: { fields?: Record<string, string>; listFields?: Record<string, string[]>; captures?: { tf: string; path: string; note?: string }[] }
 ): string {
   let md = setFrontmatter(baseMd, input.fields ?? {});
   for (const [key, vals] of Object.entries(input.listFields ?? {})) {
