@@ -16,6 +16,10 @@ interface DrawingsState {
   upsert: (key: string, overlay: SavedOverlay) => void;
   remove: (key: string, id: string) => void;
   clear: (key: string) => void;
+  /** Replace the whole map (on load from Firestore via DrawingsSync). */
+  hydrate: (all: Record<string, SavedOverlay[]>) => void;
+  /** Wipe all drawings (on sign-out / account switch) for isolation. */
+  reset: () => void;
 }
 
 export const useDrawingsStore = create<DrawingsState>()(
@@ -36,8 +40,13 @@ export const useDrawingsStore = create<DrawingsState>()(
           drawings: { ...s.drawings, [key]: (s.drawings[key] ?? []).filter((o) => o.id !== id) }
         })),
 
-      clear: (key) => set((s) => ({ drawings: { ...s.drawings, [key]: [] } }))
+      clear: (key) => set((s) => ({ drawings: { ...s.drawings, [key]: [] } })),
+
+      hydrate: (all) => set({ drawings: all }),
+      reset: () => set({ drawings: {} })
     }),
+    // localStorage stays as a same-device cache (instant restore on chart
+    // mount); DrawingsSync layers per-user Firestore on top.
     { name: 'forex-drawings' }
   )
 );

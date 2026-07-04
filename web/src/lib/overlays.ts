@@ -98,6 +98,24 @@ export function restoreOverlays(chart: Chart, key: string): void {
 }
 
 /**
+ * Reconcile already-mounted charts to the current drawingsStore after a
+ * Firestore hydrate: remove the previously-restored persisted overlays (by id,
+ * so trade/ICT overlays are untouched) and re-create from the new store state.
+ * `charts` maps paneId -> Chart; `prev` is the pre-hydrate drawings map.
+ */
+export function resyncOverlays(
+  charts: Record<string, Chart>,
+  tabId: string,
+  prev: Record<string, SavedOverlay[]>
+): void {
+  for (const [paneId, chart] of Object.entries(charts)) {
+    const key = `${tabId}:${paneId}`;
+    for (const o of prev[key] ?? []) chart.removeOverlay({ id: o.id });
+    restoreOverlays(chart, key);
+  }
+}
+
+/**
  * Apply a patch (mode / lock / visible) to every SAVED overlay on the active
  * tab's panes — used by the toolbar's magnet / lock-all / hide-all toggles.
  * `charts` maps paneId -> Chart (from chartStore); keys are `${tabId}:${paneId}`.

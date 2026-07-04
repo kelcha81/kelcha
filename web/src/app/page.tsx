@@ -3,6 +3,7 @@ import { AuthGate } from '@/components/AuthGate';
 import { AccountBar } from '@/components/AccountBar';
 import { SettingsSync } from '@/components/SettingsSync';
 import { WorkspaceSync } from '@/components/WorkspaceSync';
+import { DrawingsSync } from '@/components/DrawingsSync';
 
 export default function Home() {
   return (
@@ -11,6 +12,7 @@ export default function Home() {
         <AccountBar />
         <SettingsSync />
         <WorkspaceSync />
+        <DrawingsSync />
         <AppRoot />
       </AuthGate>
     </main>
