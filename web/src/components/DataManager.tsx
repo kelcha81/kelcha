@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { X, Download, RefreshCw, Database, Loader2 } from 'lucide-react';
 import { SYMBOL_LIST, type SymbolInfo } from '@/lib/symbols';
-import { seedSymbol } from '@/lib/seed';
+import { preloadSymbol, clearMemCache } from '@/lib/candleSource';
 import { hasSymbol, deleteSymbol } from '@/lib/idb';
 import { getIdToken } from '@/lib/firebase';
 import { Modal } from '@/components/ui/dialog';
@@ -87,10 +87,6 @@ export function DataManager({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const seed = async (s: SymbolInfo) => {
-    await seedSymbol(s.symbol, (p) => setStage(`Seeding ${p.label} (${p.done}/${p.total})`));
-  };
-
   const wrap = async (sym: string, fn: () => Promise<void>) => {
     setRunningSym(sym);
     setError(null);
@@ -115,23 +111,25 @@ export function DataManager({ onClose }: { onClose: () => void }) {
         setStage,
         (line) => setLogs((p) => [...p.slice(-300), line])
       );
-      await seed(s);
+      // No seeding needed — charts load lazily from the packaged data.
     });
 
-  const seedOnly = (s: SymbolInfo) => wrap(s.symbol, () => seed(s));
+  // Optional: warm the entire local cache (charts never require this).
+  const preload = (s: SymbolInfo) =>
+    wrap(s.symbol, () => preloadSymbol(s.symbol, (p) => setStage(`Caching ${p.label} (${p.done}/${p.total})`)));
 
-  const reseed = (s: SymbolInfo) =>
+  const clearCache = (s: SymbolInfo) =>
     wrap(s.symbol, async () => {
-      setStage('Clearing local copy…');
+      setStage('Clearing local cache…');
       await deleteSymbol(s.symbol);
-      await seed(s);
+      clearMemCache(s.symbol);
     });
 
   const busy = runningSym !== null;
 
   const badge = (st: Status | undefined) => {
-    if (st?.seeded) return <span className="rounded bg-emerald-900/50 px-1.5 py-0.5 text-[10px] text-emerald-300">Ready</span>;
-    if (st?.packaged) return <span className="rounded bg-blue-900/50 px-1.5 py-0.5 text-[10px] text-blue-300">Packaged</span>;
+    if (st?.seeded) return <span className="rounded bg-emerald-900/50 px-1.5 py-0.5 text-[10px] text-emerald-300">Cached</span>;
+    if (st?.packaged) return <span className="rounded bg-blue-900/50 px-1.5 py-0.5 text-[10px] text-blue-300">Ready</span>;
     return <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">Not packaged</span>;
   };
 
@@ -196,25 +194,26 @@ export function DataManager({ onClose }: { onClose: () => void }) {
                           <Download className="h-3 w-3" /> Download
                         </button>
                       )}
-                      {st?.packaged && !st.seeded && (
-                        <button
-                          type="button"
-                          onClick={() => seedOnly(s)}
-                          disabled={busy}
-                          className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700 disabled:opacity-40"
-                        >
-                          Load
-                        </button>
-                      )}
                       {st?.packaged && (
                         <button
                           type="button"
-                          onClick={() => reseed(s)}
+                          onClick={() => preload(s)}
                           disabled={busy}
-                          title="Re-download / re-seed"
+                          title="Optionally cache the full history locally (charts load on demand regardless)"
+                          className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700 disabled:opacity-40"
+                        >
+                          Preload
+                        </button>
+                      )}
+                      {st?.seeded && (
+                        <button
+                          type="button"
+                          onClick={() => clearCache(s)}
+                          disabled={busy}
+                          title="Clear this symbol's local cache (it refills lazily)"
                           className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700 disabled:opacity-40"
                         >
-                          <RefreshCw className="h-3 w-3" /> Re-seed
+                          <RefreshCw className="h-3 w-3" /> Clear cache
                         </button>
                       )}
                     </div>

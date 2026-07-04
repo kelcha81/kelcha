@@ -76,6 +76,11 @@ export function useVisibleData(timeframe: Timeframe): Candle[] {
       let periodStart = -Infinity;
       let periodEnd = Infinity;
       if (timeframe !== 'm1') {
+        // Two-phase paint: closed bars render the moment the tf window arrives
+        // (forming bar is null until its m1 chunk lands — matters on a cold
+        // cache, where the m1 month fetch is the slow part).
+        setVisible(buildVisibleData(data, head, timeframe));
+
         let pIdx = -1;
         for (let i = tfWindow.length - 1; i >= 0; i--) {
           if (tfWindow[i].timestamp <= head) {
@@ -92,6 +97,8 @@ export function useVisibleData(timeframe: Timeframe): Candle[] {
         data.m1 = m1Window;
       }
 
+      // windowRef only set once BOTH pieces are in, keeping the covered
+      // fast-path (which assumes a complete window) intact.
       windowRef.current = {
         symbol,
         timeframe,

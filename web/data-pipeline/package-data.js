@@ -3,13 +3,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { aggregateCandles } from './aggregate.js';
 
-// Packages a symbol's full history into browser-servable files for IndexedDB
-// seeding:  public/data/<symbol>/{ manifest.json, m1/<YYYY-MM>.json, <tf>.json... }
+// Packages a symbol's full history into browser-servable files for lazy,
+// on-demand loading: public/data/<symbol>/{ manifest.json, m1/<YYYY-MM>.json,
+// <tf>/<YYYY-MM>.json (m5/m15/h1), <tf>.json... }
 //   node package-data.js eurusd
 //
 // M1 -> monthly chunks. Higher timeframes recomputed from M1:
 //   m5/m15/h1/h4/d1 via fixed-minute buckets (aggregateCandles, session-aligned)
 //   w1 (weekly, Monday-anchored) and mo1 (monthly) via calendar buckets.
+// m5/m15/h1 are ALSO written as monthly chunk files (the client fetches those
+// on demand); whole <tf>.json files remain for every tf — the engine reads
+// them directly, and the client falls back to them when `chunks` is absent.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(HERE, 'data');
@@ -134,9 +138,31 @@ async function main() {
   datasets.w1 = aggregateCalendar(m1, weekKey);
   datasets.mo1 = aggregateCalendar(m1, monthKey);
 
+  // Monthly-chunked aggregates for the client's lazy loader (UTC month of the
+  // bar's open, same split as m1). Small tfs stay single-file.
+  const CHUNKED_TFS = new Set(['m5', 'm15', 'h1']);
+
   for (const [tf, candles] of Object.entries(datasets)) {
     await writeFile(join(OUT_DIR, `${tf}.json`), JSON.stringify(candles), 'utf8');
     timeframes[tf] = { file: `${tf}.json` };
+
+    if (CHUNKED_TFS.has(tf)) {
+      await mkdir(join(OUT_DIR, tf), { recursive: true });
+      const byMonth = new Map();
+      for (const c of candles) {
+        const k = chunkMonth(c.timestamp);
+        let arr = byMonth.get(k);
+        if (!arr) byMonth.set(k, (arr = []));
+        arr.push(c);
+      }
+      const names = [];
+      for (const [k, arr] of [...byMonth.entries()].sort()) {
+        const name = `${tf}/${k}.json`;
+        await writeFile(join(OUT_DIR, name), JSON.stringify(arr), 'utf8');
+        names.push(name);
+      }
+      timeframes[tf].chunks = names;
+    }
     console.log(`[${SYMBOL}]   ${tf.padEnd(3)} ${candles.length.toLocaleString().padStart(8)} candles`);
   }
 

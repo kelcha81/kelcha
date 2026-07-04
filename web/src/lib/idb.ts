@@ -1,29 +1,32 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { Candle, Timeframe } from '@/store/replayStore';
 
-// IndexedDB storage:
-//   `${symbol}:m1:${YYYY-MM}` -> Candle[]   (M1 chunked by month for ranged reads)
-//   `${symbol}:${tf}`         -> Candle[]   (m5..mo1 stored whole)
-//   `${symbol}:meta`          -> SymbolMeta (bounds + months + schemaVersion)
+// IndexedDB is a CACHE over the server's packaged candles (lazy, on-demand):
+//   `${symbol}:${tf}:${YYYY-MM}` -> Candle[]   (chunked tfs: m1 + m5/m15/h1)
+//   `${symbol}:${tf}`            -> Candle[]   (whole-file tfs: h4/d1/w1/mo1)
+//   `${symbol}:cacheMeta`        -> CacheMeta  (per-record dataMax-at-fetch)
 //
-// Reseeding is gated on SCHEMA_VERSION inside the meta record — NOT on the IDB
-// version — so changing the data model never needs a destructive (and
-// deadlock-prone) IndexedDB upgrade.
+// Freshness is gated on SCHEMA_VERSION inside the cacheMeta record — NOT on
+// the IDB version — so changing the data model never needs a destructive (and
+// deadlock-prone) IndexedDB upgrade. Records without a cacheMeta entry (e.g.
+// leftovers from the old full-seed schema) are simply never trusted and get
+// overwritten on first fetch.
 
 const DB_NAME = 'forex-replay-data';
 const DB_VERSION = 4;
 const STORE = 'series';
 const BACKTESTS = 'backtests'; // latest backtest result per tab (survives reload)
 
-/** Bump when the stored data shape changes; forces a (non-destructive) reseed. */
-export const SCHEMA_VERSION = 3;
+/** Bump when the stored data shape changes; invalidates the cache. */
+export const SCHEMA_VERSION = 4;
 
-export interface SymbolMeta {
+/** Per-symbol cache bookkeeping: for each stored record ('m1:2024-03' or
+ *  'h4:whole'), the manifest.dataMax observed when it was fetched — the basis
+ *  of the truncated-month freshness rule in candleSource. */
+export interface CacheMeta {
   symbol: string;
-  minTs: number;
-  maxTs: number;
-  months: string[];
   schemaVersion: number;
+  fetchedAt: Record<string, number>;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
@@ -53,8 +56,8 @@ function getDb(): Promise<IDBPDatabase> {
 }
 
 const aggKey = (symbol: string, tf: Timeframe) => `${symbol}:${tf}`;
-const m1Key = (symbol: string, month: string) => `${symbol}:m1:${month}`;
-const metaKey = (symbol: string) => `${symbol}:meta`;
+const chunkKey = (symbol: string, tf: Timeframe, month: string) => `${symbol}:${tf}:${month}`;
+const cacheMetaKey = (symbol: string) => `${symbol}:cacheMeta`;
 
 export async function getAggregate(symbol: string, tf: Timeframe): Promise<Candle[] | undefined> {
   return (await getDb()).get(STORE, aggKey(symbol, tf));
@@ -64,26 +67,27 @@ export async function putAggregate(symbol: string, tf: Timeframe, candles: Candl
   await (await getDb()).put(STORE, candles, aggKey(symbol, tf));
 }
 
-export async function getM1Chunk(symbol: string, month: string): Promise<Candle[] | undefined> {
-  return (await getDb()).get(STORE, m1Key(symbol, month));
+export async function getChunk(symbol: string, tf: Timeframe, month: string): Promise<Candle[] | undefined> {
+  return (await getDb()).get(STORE, chunkKey(symbol, tf, month));
 }
 
-export async function putM1Chunk(symbol: string, month: string, candles: Candle[]): Promise<void> {
-  await (await getDb()).put(STORE, candles, m1Key(symbol, month));
+export async function putChunk(symbol: string, tf: Timeframe, month: string, candles: Candle[]): Promise<void> {
+  await (await getDb()).put(STORE, candles, chunkKey(symbol, tf, month));
 }
 
-export async function getMeta(symbol: string): Promise<SymbolMeta | undefined> {
-  return (await getDb()).get(STORE, metaKey(symbol));
+export async function getCacheMeta(symbol: string): Promise<CacheMeta | undefined> {
+  const meta = (await (await getDb()).get(STORE, cacheMetaKey(symbol))) as CacheMeta | undefined;
+  return meta && meta.schemaVersion === SCHEMA_VERSION ? meta : undefined;
 }
 
-export async function putMeta(meta: SymbolMeta): Promise<void> {
-  await (await getDb()).put(STORE, meta, metaKey(meta.symbol));
+export async function putCacheMeta(meta: CacheMeta): Promise<void> {
+  await (await getDb()).put(STORE, meta, cacheMetaKey(meta.symbol));
 }
 
-/** Seeded AND on the current schema (else it needs a reseed). */
+/** Has ANY locally cached data on the current schema (cache is lazy/partial). */
 export async function hasSymbol(symbol: string): Promise<boolean> {
-  const meta = await getMeta(symbol);
-  return meta !== undefined && meta.schemaVersion === SCHEMA_VERSION;
+  const meta = await getCacheMeta(symbol);
+  return meta !== undefined && Object.keys(meta.fetchedAt).length > 0;
 }
 
 // --- backtest results (latest per tab) --------------------------------------
