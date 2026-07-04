@@ -8,6 +8,9 @@ export interface SavedOverlay {
   points: Array<Partial<{ dataIndex: number; timestamp: number; value: number }>>;
   extendData?: Record<string, unknown>; // e.g. text content for annotations
   styles?: Record<string, unknown>; // colour / width / line style overrides
+  lock?: boolean; // per-drawing lock (survives reload)
+  visible?: boolean; // false = hidden (per-drawing)
+  zLevel?: number; // draw order (bring-to-front / send-to-back)
 }
 
 interface DrawingsState {

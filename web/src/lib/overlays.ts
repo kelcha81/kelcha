@@ -1,6 +1,7 @@
-import { OverlayMode, type Chart, type OverlayEvent } from 'klinecharts';
+import { OverlayMode, type Chart, type Overlay, type OverlayEvent } from 'klinecharts';
 import { useDrawingsStore, type SavedOverlay } from '@/store/drawingsStore';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
+import { useDrawingSettingsStore } from '@/store/drawingSettingsStore';
 import { useToolbarStore, type MagnetMode } from '@/store/toolbarStore';
 
 // Create a KLineChart overlay wired to persist itself: it saves its points on
@@ -14,16 +15,24 @@ export function magnetToMode(magnet: MagnetMode): OverlayMode {
   return OverlayMode.Normal;
 }
 
+/** Serialize an overlay's persistable state (single source of truth for both
+ *  draw/move-end persistence and live edits from the toolbar/menu/dialog). */
+export function overlaySnapshot(o: Overlay): SavedOverlay {
+  return {
+    id: o.id,
+    name: o.name,
+    points: o.points,
+    extendData: o.extendData as Record<string, unknown> | undefined,
+    styles: o.styles as Record<string, unknown> | undefined,
+    ...(o.lock ? { lock: true } : {}),
+    ...(o.visible === false ? { visible: false } : {}),
+    ...(typeof o.zLevel === 'number' ? { zLevel: o.zLevel } : {})
+  };
+}
+
 function persist(key: string) {
   return (e: OverlayEvent): boolean => {
-    const o = e.overlay;
-    useDrawingsStore.getState().upsert(key, {
-      id: o.id,
-      name: o.name,
-      points: o.points,
-      extendData: o.extendData as Record<string, unknown> | undefined,
-      styles: o.styles as Record<string, unknown> | undefined
-    });
+    useDrawingsStore.getState().upsert(key, overlaySnapshot(e.overlay));
     return false;
   };
 }
@@ -40,6 +49,7 @@ export function createPersistentOverlay(
     mode?: OverlayMode;
     lock?: boolean;
     visible?: boolean;
+    zLevel?: number;
     onDone?: () => void;
   }
 ): string | null {
@@ -54,6 +64,7 @@ export function createPersistentOverlay(
     mode: opts.mode,
     lock: opts.lock,
     visible: opts.visible,
+    zLevel: opts.zLevel,
     onDrawEnd: (e) => {
       save(e);
       opts.onDone?.();
@@ -67,6 +78,18 @@ export function createPersistentOverlay(
     onSelected: (e) => {
       useOverlayMenuStore.getState().setSelected({ chart, id: e.overlay.id, paneKey: key });
       return false;
+    },
+    onDeselected: (e) => {
+      // Hide the floating toolbar when this overlay is deselected.
+      if (useOverlayMenuStore.getState().selected?.id === e.overlay.id) {
+        useOverlayMenuStore.getState().setSelected(null);
+      }
+      return false;
+    },
+    onDoubleClick: (e) => {
+      // Double-click opens the full settings dialog.
+      useDrawingSettingsStore.getState().openSettings({ chart, overlayId: e.overlay.id, paneKey: key, name: e.overlay.name });
+      return true;
     },
     onRightClick: (e) => {
       useOverlayMenuStore.getState().openMenu({ chart, overlay: e.overlay, paneKey: key });
@@ -90,9 +113,11 @@ export function restoreOverlays(chart: Chart, key: string): void {
       id: o.id,
       extendData: o.extendData,
       styles: o.styles,
+      zLevel: o.zLevel,
       mode: magnetToMode(tb.magnet),
-      lock: tb.lockAll || undefined,
-      visible: tb.hideAll ? false : undefined
+      // Per-drawing lock/hide OR the global toolbar toggles.
+      lock: o.lock || tb.lockAll || undefined,
+      visible: tb.hideAll ? false : o.visible === false ? false : undefined
     });
   }
 }

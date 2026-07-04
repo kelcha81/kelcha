@@ -26,6 +26,8 @@ import { IctAnnotations } from '@/components/IctAnnotations';
 import { ChartPluginsBridge } from '@/components/ChartPluginsBridge';
 import { UserPluginsLoader } from '@/components/UserPluginsLoader';
 import { OverlayContextMenu } from '@/components/OverlayContextMenu';
+import { FloatingDrawingToolbar } from '@/components/FloatingDrawingToolbar';
+import { DrawingSettingsModal } from '@/components/DrawingSettingsModal';
 
 const TF_OPTIONS: { tf: Timeframe; name: string }[] = [
   { tf: 'm1', name: '1m' },
@@ -214,6 +216,8 @@ export function Dashboard() {
       <IctAnnotations />
       <UserPluginsLoader />
       <OverlayContextMenu />
+      <FloatingDrawingToolbar />
+      <DrawingSettingsModal />
     </div>
   );
 }
