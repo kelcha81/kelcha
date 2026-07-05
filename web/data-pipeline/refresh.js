@@ -2,14 +2,19 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
+import { uploadSymbol } from './upload.js';
 
 // Daily candle refresh (Cloud Run Job). For each symbol, re-pull M1 from
-// Dukascopy up to "yesterday" and re-package into the candles bucket (mounted at
-// ../public/data). The download's exclusive UTC-midnight TO = today's date, so
-// today's still-forming NY session is excluded and the last complete daily bar
-// (NY sessions close 5pm) is yesterday's — i.e. backtests run up to the previous
-// day. dukascopy caching (DUKASCOPY_CACHE_DIR, persisted on the bucket) keeps
-// each run incremental.
+// Dukascopy up to "yesterday", re-package to LOCAL disk, verify, then publish to
+// the candles bucket via the GCS SDK (durable, atomic, manifest-last). The
+// download's exclusive UTC-midnight TO = today's date, so today's still-forming
+// NY session is excluded and the last complete daily bar (NY sessions close 5pm)
+// is yesterday's — i.e. backtests run up to the previous day. dukascopy caching
+// (DUKASCOPY_CACHE_DIR, persisted on the bucket) keeps each run incremental.
+//
+// PACKAGE_OUT_DIR points the packager at local container disk; GCP_CANDLES_BUCKET
+// is the publish target. If GCP_CANDLES_BUCKET is unset (local dev), packaging
+// writes straight to public/data and the upload step is skipped.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -34,7 +39,9 @@ function run(script, args) {
   });
 }
 
-const DATA_ROOT = join(HERE, '..', 'public', 'data');
+// Where package-data.js writes (must match its PACKAGE_OUT_DIR default).
+const DATA_ROOT = process.env.PACKAGE_OUT_DIR || join(HERE, '..', 'public', 'data');
+const BUCKET = process.env.GCP_CANDLES_BUCKET || '';
 
 /**
  * Post-package verification gate. Reads the symbol's just-written manifest and
@@ -77,8 +84,17 @@ async function main() {
     try {
       await run('download.js', [s.symbol, s.instrument, FROM, TO]);
       await run('package-data.js', [s.symbol, String(s.precision)]);
+      // Verify the LOCAL package is complete before it goes anywhere.
       const checked = await verifySymbol(s.symbol);
-      console.log(`[${s.symbol}] refreshed — ${checked} files verified`);
+      if (BUCKET) {
+        // Publish via the GCS SDK: chunks first, manifest last (atomic swap of
+        // the view). A failure here leaves the previous manifest — and thus the
+        // previous consistent data — untouched (keep-last-good).
+        const uploaded = await uploadSymbol(s.symbol, join(DATA_ROOT, s.symbol), BUCKET);
+        console.log(`[${s.symbol}] refreshed — ${checked} verified, ${uploaded} published to ${BUCKET}`);
+      } else {
+        console.log(`[${s.symbol}] refreshed — ${checked} files verified (no bucket; wrote ${DATA_ROOT})`);
+      }
     } catch (e) {
       failed++;
       console.error(`[${s.symbol}] FAILED:`, e?.message ?? e);

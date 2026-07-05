@@ -167,5 +167,5 @@ jobs:
             --service-account "data-refresh-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
-            --set-env-vars "DUKASCOPY_CACHE_DIR=/app/public/data/_dukascache" \
+            --set-env-vars "DUKASCOPY_CACHE_DIR=/app/public/data/_dukascache,PACKAGE_OUT_DIR=/app/out,GCP_CANDLES_BUCKET=${{ vars.GCP_CANDLES_BUCKET }}" \
             --cpu 2 --memory 4Gi --task-timeout 10800 --max-retries 1

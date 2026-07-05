@@ -23,7 +23,11 @@ const SESSION = { timeZone: TZ, offsetMinutes: -17 * 60 }; // 5pm NY rollover
 const FIXED_TIMEFRAMES = { m5: 5, m15: 15, h1: 60, h4: 240, d1: 1440 };
 
 const SYMBOL = (process.argv[2] || 'eurusd').toLowerCase();
-const OUT_DIR = join(HERE, '..', 'public', 'data', SYMBOL);
+// PACKAGE_OUT_DIR lets the refresh Job package to LOCAL disk (then upload to the
+// bucket via the GCS SDK) instead of writing straight to a gcsfuse mount. Local
+// dev defaults to public/data so `npm run` / the /api/symbols/package route work.
+const OUT_BASE = process.env.PACKAGE_OUT_DIR || join(HERE, '..', 'public', 'data');
+const OUT_DIR = join(OUT_BASE, SYMBOL);
 // Optional precision arg (indices need 1); else infer from the symbol.
 const pricePrecision = process.argv[3] ? Number(process.argv[3]) : SYMBOL.endsWith('jpy') ? 3 : 5;
 
