@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { init, dispose, TooltipShowRule, type Chart, type KLineData } from 'klinecharts';
+import { init, dispose, TooltipShowRule, ActionType, type Chart, type KLineData } from 'klinecharts';
 import type { Candle, Timeframe } from '@/store/replayStore';
 import { useReplayStore } from '@/store/replayStore';
 import { useActiveTab } from '@/store/workspaceStore';
@@ -87,8 +87,19 @@ export function CandleChart({
   const chartRef = useRef<Chart | null>(null);
   const prevLenRef = useRef(0);
   const prevFirstTimeRef = useRef<number | null>(null);
+  const prevLastTimeRef = useRef<number | null>(null);
+  // Left-edge history loading: refs so the (once-mounted) scroll subscription
+  // always sees the latest values without resubscribing.
+  const loadingOlderRef = useRef(false);
+  const loadOlderRef = useRef<() => void>(() => {});
+  const hasMoreRef = useRef(false);
 
-  const candles = useVisibleData(timeframe);
+  const { candles, loadOlder, hasMore } = useVisibleData(timeframe);
+  // Keep the once-mounted scroll subscription pointed at the latest values.
+  useEffect(() => {
+    loadOlderRef.current = loadOlder;
+    hasMoreRef.current = hasMore;
+  });
 
   // Create the chart once (and on precision change).
   useEffect(() => {
@@ -110,6 +121,21 @@ export function CandleChart({
     // Resize the chart when its pane changes size (window resize OR layout change).
     const ro = new ResizeObserver(() => chart?.resize());
     ro.observe(el);
+
+    // Scroll/zoom to the left edge -> pull another page of older history on
+    // demand (the CandleSource caches it; applyMoreData below prepends it while
+    // preserving the viewport). `from` is the leftmost visible data index.
+    const HISTORY_EDGE_BARS = 20;
+    const onReachStart = () => {
+      if (loadingOlderRef.current || !hasMoreRef.current) return;
+      const vr = chart?.getVisibleRange();
+      if (vr && vr.from <= HISTORY_EDGE_BARS) {
+        loadingOlderRef.current = true;
+        loadOlderRef.current();
+      }
+    };
+    chart?.subscribeAction(ActionType.OnScroll, onReachStart);
+    chart?.subscribeAction(ActionType.OnZoom, onReachStart);
 
     // Chart clicks: focus the pane; set an armed order-ticket level pick; and
     // seek ONLY deliberately — Ctrl/Cmd+Click or one-shot Jump mode (J) —
@@ -150,6 +176,8 @@ export function CandleChart({
 
     return () => {
       ro.disconnect();
+      chart?.unsubscribeAction(ActionType.OnScroll, onReachStart);
+      chart?.unsubscribeAction(ActionType.OnZoom, onReachStart);
       el.removeEventListener('click', onChartClick);
       useChartStore.getState().unregisterChart(paneId);
       dispose(el);
@@ -177,26 +205,40 @@ export function CandleChart({
       chart.applyNewData([]);
       prevLenRef.current = 0;
       prevFirstTimeRef.current = null;
+      prevLastTimeRef.current = null;
       return;
     }
 
     const len = candles.length;
     const firstTime = candles[0].timestamp;
+    const lastTime = candles[len - 1].timestamp;
     const prevLen = prevLenRef.current;
     const grewByOne = len === prevLen + 1 && prevFirstTimeRef.current === firstTime;
     const formingMoved = len === prevLen && prevFirstTimeRef.current === firstTime;
+    // History extension: same tail, older bars prepended (user scrolled left).
+    const grewAtFront =
+      prevFirstTimeRef.current !== null &&
+      firstTime < prevFirstTimeRef.current &&
+      lastTime === prevLastTimeRef.current &&
+      len > prevLen;
 
     if (formingMoved) {
       chart.updateData(toKline(candles[len - 1]));
     } else if (grewByOne) {
       chart.updateData(toKline(candles[len - 2]));
       chart.updateData(toKline(candles[len - 1]));
+    } else if (grewAtFront) {
+      // Prepend only the new older bars — keeps the current scroll/zoom in place.
+      chart.applyMoreData(candles.slice(0, len - prevLen).map(toKline), hasMoreRef.current);
     } else {
       chart.applyNewData(candles.map(toKline));
     }
 
+    // Any fresh data means an in-flight history request (if any) has resolved.
+    loadingOlderRef.current = false;
     prevLenRef.current = len;
     prevFirstTimeRef.current = firstTime;
+    prevLastTimeRef.current = lastTime;
   }, [candles]);
 
   return (

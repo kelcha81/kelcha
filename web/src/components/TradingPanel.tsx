@@ -33,7 +33,7 @@ export function TradingPanel() {
   const contractSize = info.contractSize;
   const head = useReplayStore((s) => s.currentTimestamp);
 
-  const candles = useVisibleData('m1');
+  const { candles } = useVisibleData('m1');
   const bar = candles.length ? candles[candles.length - 1] : null;
   const price = bar?.close ?? null;
 
