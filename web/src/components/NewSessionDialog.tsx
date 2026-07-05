@@ -96,7 +96,7 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
         <div className="space-y-3 p-3">
           {/* Asset class */}
           <div className="flex gap-1">
-            {(['forex', 'index'] as AssetClass[]).map((c) => (
+            {(['forex', 'index', 'commodity'] as AssetClass[]).map((c) => (
               <button
                 key={c}
                 type="button"
@@ -105,7 +105,7 @@ export function NewSessionDialog({ onClose }: { onClose: () => void }) {
                   assetClass === c ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                {c === 'index' ? 'Indices' : 'Forex'}
+                {c === 'index' ? 'Indices' : c === 'commodity' ? 'Commodities' : 'Forex'}
               </button>
             ))}
           </div>

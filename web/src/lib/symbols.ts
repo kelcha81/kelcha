@@ -1,4 +1,4 @@
-export type AssetClass = 'forex' | 'index';
+export type AssetClass = 'forex' | 'index' | 'commodity';
 
 export interface SymbolInfo {
   /** Internal id (lowercase), e.g. 'eurusd' or 'us30'. */
@@ -22,12 +22,18 @@ export interface SymbolInfo {
  */
 export const SYMBOLS: Record<string, SymbolInfo> = {
   eurusd: { symbol: 'eurusd', label: 'EUR/USD', instrumentCode: 'eurusd', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
+  gbpusd: { symbol: 'gbpusd', label: 'GBP/USD', instrumentCode: 'gbpusd', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
+  usdchf: { symbol: 'usdchf', label: 'USD/CHF', instrumentCode: 'usdchf', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
+  eurgbp: { symbol: 'eurgbp', label: 'EUR/GBP', instrumentCode: 'eurgbp', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
   gbpjpy: { symbol: 'gbpjpy', label: 'GBP/JPY', instrumentCode: 'gbpjpy', pricePrecision: 3, assetClass: 'forex', available: true, contractSize: 100000 },
 
   us30: { symbol: 'us30', label: 'US30 (Dow)', instrumentCode: 'usa30idxusd', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
   nas100: { symbol: 'nas100', label: 'NAS100', instrumentCode: 'usatechidxusd', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
   us500: { symbol: 'us500', label: 'S&P 500', instrumentCode: 'usa500idxusd', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
-  ger40: { symbol: 'ger40', label: 'GER40 (DAX)', instrumentCode: 'deuidxeur', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 }
+  ger40: { symbol: 'ger40', label: 'GER40 (DAX)', instrumentCode: 'deuidxeur', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
+  ftse100: { symbol: 'ftse100', label: 'FTSE 100', instrumentCode: 'gbridxgbp', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
+
+  xauusd: { symbol: 'xauusd', label: 'Gold (XAU/USD)', instrumentCode: 'xauusd', pricePrecision: 2, assetClass: 'commodity', available: true, contractSize: 100 }
 };
 
 export const SYMBOL_LIST: SymbolInfo[] = Object.values(SYMBOLS);
