@@ -225,6 +225,35 @@ gcloud run jobs execute data-refresh --region=$REGION
 The dukascopy tick cache persists under `gs://$CANDLES_BUCKET/_dukascache/`, so
 after the first (full) run each daily run only fetches the new day.
 
+Each run ends with a **verification gate** (`verifySymbol` in `refresh.js`): after
+packaging a symbol it confirms every file its manifest references (each `<tf>.json`
+plus every monthly `chunk`) exists on the bucket and is non-empty. If not, that
+symbol is counted failed and the Job exits non-zero — so a partial/dropped write
+surfaces as a failed execution instead of silently publishing a manifest the
+charts 404 on.
+
+## 11. Refresh-failure alerting (Cloud Monitoring)
+
+So a failed refresh never goes unnoticed, there is an email notification channel
+(`kelvin@kelcha.com`) and an alert policy **"data-refresh Job failed"** that fires
+on any failed execution of the `data-refresh` Job (crash *or* verification-gate
+failure). Both were created via the Monitoring REST API (the CLI needs the
+`alpha`/`beta` components). To recreate/inspect:
+
+```bash
+TOKEN=$(gcloud auth print-access-token); PID=$(gcloud config get-value project)
+# Email channel
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://monitoring.googleapis.com/v3/projects/$PID/notificationChannels" \
+  -d '{"type":"email","displayName":"Kelvin — data pipeline alerts","labels":{"email_address":"kelvin@kelcha.com"},"enabled":true}'
+# Alert policy: fires when run.googleapis.com/job/completed_execution_count{result="failed"} > 0
+#   filter resource.type="cloud_run_job" job_name="data-refresh"; see the repo history for the full policy JSON.
+```
+
+The channel gets a one-time verification email from Google; click it to confirm
+ownership. Alerts auto-close 30 min after the metric clears (i.e. after the next
+successful run).
+
 ## Notes / follow-ups
 - **Least privilege:** one shared runtime SA is used for simplicity. Split into
   per-service SAs (engine needs the secret + candles; web needs neither) when hardening.
