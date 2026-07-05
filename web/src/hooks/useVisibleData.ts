@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useReplayStore } from '@/store/replayStore';
 import type { Candle, FullData, Timeframe } from '@/store/replayStore';
 import { buildVisibleData, TIMEFRAME_MINUTES } from '@/lib/visibleData';
@@ -10,14 +10,10 @@ import { getRange } from '@/lib/candleSource';
 const DISPLAY_BARS = 600;
 const FORWARD_BARS = 400;
 const MARGIN_BARS = 120;
-// Each loadOlder() pulls another page of history further back. Older closed bars
-// are immutable and cached, so extending is mostly free.
-const HISTORY_PAGE_BARS = 750;
 
 interface LoadedWindow {
   symbol: string;
   timeframe: Timeframe;
-  loadedFrom: number; // oldest ts actually fetched (history-extent coverage)
   safeFrom: number; // reload display once head drops below this
   safeTo: number; // reload display once head rises above this
   periodStart: number; // current (forming) bar start
@@ -25,22 +21,12 @@ interface LoadedWindow {
   data: FullData; // { [tf]: closed window, m1: current period's M1 }
 }
 
-export interface VisibleData {
-  candles: Candle[];
-  /** Extend the loaded history one page further back (for scroll-to-left-edge). */
-  loadOlder: () => void;
-  /** True while there is still older history left of what's loaded. */
-  hasMore: boolean;
-}
-
 /**
  * Candles a chart should render for `timeframe`: closed bars up to the replay
  * head plus the live forming bar, read in a sliding window from the CandleSource.
- * Memory stays bounded during normal playback; scrolling/zooming to the left edge
- * calls `loadOlder()` to widen the history extent on demand (TradingView-style),
- * so a short session can still reveal the full chart history behind it.
+ * Memory stays bounded regardless of total history. Returns a plain `Candle[]`.
  */
-export function useVisibleData(timeframe: Timeframe): VisibleData {
+export function useVisibleData(timeframe: Timeframe): Candle[] {
   const symbol = useReplayStore((s) => s.symbol);
   const head = useReplayStore((s) => s.currentTimestamp);
   const dataBounds = useReplayStore((s) => s.dataBounds);
@@ -48,23 +34,6 @@ export function useVisibleData(timeframe: Timeframe): VisibleData {
   const [visible, setVisible] = useState<Candle[]>([]);
   const windowRef = useRef<LoadedWindow | null>(null);
   const reqRef = useRef(0);
-  // Oldest ts the user has scrolled back to want loaded (null = default window).
-  const backTargetRef = useRef<number | null>(null);
-  const [historyNonce, setHistoryNonce] = useState(0);
-
-  // Reset the history extent whenever the series identity changes.
-  useEffect(() => {
-    backTargetRef.current = null;
-  }, [symbol, timeframe]);
-
-  const loadOlder = useCallback(() => {
-    const w = windowRef.current;
-    if (!w || !dataBounds) return;
-    if (w.loadedFrom <= dataBounds.min) return; // already at the start of history
-    const tfMs = TIMEFRAME_MINUTES[timeframe] * 60_000;
-    backTargetRef.current = Math.max(dataBounds.min, w.loadedFrom - HISTORY_PAGE_BARS * tfMs);
-    setHistoryNonce((n) => n + 1);
-  }, [timeframe, dataBounds]);
 
   useEffect(() => {
     if (!symbol || !dataBounds || !head) {
@@ -74,13 +43,6 @@ export function useVisibleData(timeframe: Timeframe): VisibleData {
     }
 
     const tfMs = TIMEFRAME_MINUTES[timeframe] * 60_000;
-    // Default back edge follows the head; a scrolled-back target pins it older.
-    const headFrom = head - DISPLAY_BARS * tfMs;
-    const desiredFrom = Math.max(
-      dataBounds.min,
-      Math.min(headFrom, backTargetRef.current ?? headFrom)
-    );
-
     const w = windowRef.current;
     const covered =
       !!w &&
@@ -89,8 +51,7 @@ export function useVisibleData(timeframe: Timeframe): VisibleData {
       head >= w.safeFrom &&
       head <= w.safeTo &&
       head >= w.periodStart &&
-      head < w.periodEnd &&
-      w.loadedFrom <= desiredFrom; // already loaded at least as far back as wanted
+      head < w.periodEnd;
 
     if (covered) {
       setVisible(buildVisibleData(w.data, head, timeframe));
@@ -101,7 +62,7 @@ export function useVisibleData(timeframe: Timeframe): VisibleData {
     let cancelled = false;
 
     (async () => {
-      const from = desiredFrom;
+      const from = Math.max(dataBounds.min, head - DISPLAY_BARS * tfMs);
       const to = Math.min(dataBounds.max, head + FORWARD_BARS * tfMs);
 
       const tfWindow = await getRange(symbol, timeframe, from, to);
@@ -141,7 +102,6 @@ export function useVisibleData(timeframe: Timeframe): VisibleData {
       windowRef.current = {
         symbol,
         timeframe,
-        loadedFrom: from,
         safeFrom: from <= dataBounds.min ? -Infinity : from + MARGIN_BARS * tfMs,
         safeTo: to >= dataBounds.max ? Infinity : to - MARGIN_BARS * tfMs,
         periodStart,
@@ -154,9 +114,7 @@ export function useVisibleData(timeframe: Timeframe): VisibleData {
     return () => {
       cancelled = true;
     };
-  }, [symbol, head, timeframe, dataBounds, historyNonce]);
+  }, [symbol, head, timeframe, dataBounds]);
 
-  // Older history remains as long as the oldest loaded bar isn't the data start.
-  const hasMore = visible.length > 0 && !!dataBounds && visible[0].timestamp > dataBounds.min;
-  return { candles: visible, loadOlder, hasMore };
+  return visible;
 }
