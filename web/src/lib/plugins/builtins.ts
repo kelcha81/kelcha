@@ -1,3 +1,4 @@
+import { TooltipShowRule } from 'klinecharts';
 import type { ChartPlugin, PluginParamsSchema } from './types';
 import { getCanvasFont } from '@/lib/fonts';
 import { useIctStore } from '@/store/ictStore';
@@ -13,7 +14,13 @@ const ictKillzones: ChartPlugin = {
     description: 'Session killzone boxes (Asia / London / NY) + high/low pivot lines.'
   },
   attach: ({ chart }) => {
-    const paneId = chart.createIndicator({ name: ICT_NAME }, true, { id: 'candle_pane' });
+    // No tooltip: it's a visual overlay with no values, and its name legend
+    // renders top-left over the OHLC legend (the pair readout).
+    const paneId = chart.createIndicator(
+      { name: ICT_NAME, styles: { tooltip: { showRule: TooltipShowRule.None } } as never },
+      true,
+      { id: 'candle_pane' }
+    );
     const unsub = useIctStore.subscribe(() => chart.overrideIndicator({ name: ICT_NAME }));
     return () => {
       unsub();
