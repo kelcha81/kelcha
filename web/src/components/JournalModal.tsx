@@ -342,7 +342,7 @@ export function JournalModal({
   };
 
   return (
-    <Modal onClose={onClose} ariaLabel="Journal" className="w-[560px]">
+    <Modal onClose={onClose} ariaLabel="Journal" className="w-[900px]">
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <BookOpen className="h-4 w-4" /> Journal to {toNotion ? 'Notion' : 'Obsidian'}

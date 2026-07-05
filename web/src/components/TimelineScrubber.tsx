@@ -4,9 +4,10 @@ import { useRef, useState } from 'react';
 import { useReplayStore } from '@/store/replayStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTradingStore, type Trade } from '@/store/tradingStore';
+import { useSettingsStore } from '@/store/settingsStore';
+import { formatDateTime } from '@/lib/timezone';
 
 const EMPTY_TRADES: Trade[] = [];
-const fmt = (ts: number) => new Date(ts).toISOString().slice(0, 16).replace('T', ' ');
 
 /**
  * Session timeline: the whole session mapped to a horizontal track. Click or
@@ -18,6 +19,7 @@ export function TimelineScrubber() {
   const head = useReplayStore((s) => s.currentTimestamp);
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const trades = useTradingStore((s) => s.trades[activeTabId] ?? EMPTY_TRADES);
+  const tz = useSettingsStore((s) => s.timezone);
 
   const trackRef = useRef<HTMLDivElement>(null);
   const raf = useRef<number | null>(null);
@@ -106,7 +108,7 @@ export function TimelineScrubber() {
           className="pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-slate-200 shadow"
           style={{ left: hover.x }}
         >
-          {fmt(hover.ts)}
+          {formatDateTime(hover.ts, tz)}
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ export interface UserSettings {
   preset?: string;
   customThemes?: Record<string, ChartTheme>;
   aiModel?: string;
+  timezone?: string;
 }
 
 const settingsRef = (uid: string) => doc(db(), 'users', uid, 'private', 'settings');

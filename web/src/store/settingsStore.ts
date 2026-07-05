@@ -34,12 +34,15 @@ interface SettingsState {
   customThemes: Record<string, ChartTheme>;
   /** Selected Claude model id for AI strategy authoring. */
   aiModel: string;
+  /** Display timezone (IANA name, or 'UTC') for the chart x-axis + head clock. */
+  timezone: string;
   setTheme: (patch: Partial<ChartTheme>) => void;
   applyPreset: (name: string) => void;
   saveTheme: (name: string) => void;
   deleteTheme: (name: string) => void;
   resetTheme: () => void;
   setAiModel: (model: string) => void;
+  setTimezone: (tz: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -49,6 +52,7 @@ export const useSettingsStore = create<SettingsState>()(
       preset: 'Dark',
       customThemes: {},
       aiModel: DEFAULT_AI_MODEL,
+      timezone: 'UTC',
 
       // Any colour edit marks the theme 'Custom' (unsaved) -> a Save affordance appears.
       setTheme: (patch) => set((s) => ({ theme: { ...s.theme, ...patch }, preset: 'Custom' })),
@@ -69,18 +73,21 @@ export const useSettingsStore = create<SettingsState>()(
 
       resetTheme: () => set({ theme: { ...DEFAULT_THEME }, preset: 'Dark' }),
 
-      setAiModel: (model) => set({ aiModel: model })
+      setAiModel: (model) => set({ aiModel: model }),
+
+      setTimezone: (timezone) => set({ timezone })
     }),
     {
       name: 'forex-settings',
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         const s = persisted as Partial<SettingsState>;
         return {
           theme: { ...DEFAULT_THEME, ...(s?.theme ?? {}) },
           preset: s?.preset ?? 'Custom',
           customThemes: s?.customThemes ?? {},
-          aiModel: s?.aiModel ?? DEFAULT_AI_MODEL
+          aiModel: s?.aiModel ?? DEFAULT_AI_MODEL,
+          timezone: s?.timezone ?? 'UTC'
         } as SettingsState;
       }
     }

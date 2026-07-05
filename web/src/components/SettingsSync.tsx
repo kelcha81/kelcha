@@ -23,7 +23,8 @@ export function SettingsSync() {
             theme: s.theme ?? prev.theme,
             preset: s.preset ?? prev.preset,
             customThemes: s.customThemes ?? prev.customThemes,
-            aiModel: s.aiModel ?? prev.aiModel
+            aiModel: s.aiModel ?? prev.aiModel,
+            timezone: s.timezone ?? prev.timezone
           }));
         }
       })
@@ -50,7 +51,8 @@ export function SettingsSync() {
             theme: cur.theme,
             preset: cur.preset,
             customThemes: cur.customThemes,
-            aiModel: cur.aiModel
+            aiModel: cur.aiModel,
+            timezone: cur.timezone
           });
         });
       }, 800);

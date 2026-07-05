@@ -82,6 +82,7 @@ export function CandleChart({
   const { symbol } = useActiveTab();
   const { pricePrecision } = getSymbolInfo(symbol);
   const theme = useSettingsStore((s) => s.theme);
+  const timezone = useSettingsStore((s) => s.timezone);
   const jumpMode = useChartStore((s) => s.jumpMode);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -97,6 +98,7 @@ export function CandleChart({
 
     const chart = init(el);
     chart?.setStyles(buildStyles(useSettingsStore.getState().theme));
+    chart?.setTimezone(useSettingsStore.getState().timezone);
     chart?.setPriceVolumePrecision(pricePrecision, 0);
 
     chartRef.current = chart;
@@ -161,6 +163,12 @@ export function CandleChart({
   useEffect(() => {
     chartRef.current?.setStyles(buildStyles(theme));
   }, [theme]);
+
+  // Display timezone for the x-axis time labels (klinecharts default = browser
+  // local; this makes it follow the user's chosen zone, like the head clock).
+  useEffect(() => {
+    chartRef.current?.setTimezone(timezone);
+  }, [timezone]);
 
   // Candle render style per pane (solid / hollow / OHLC bars / area) — a style
   // patch, so switching never remounts or reloads data.

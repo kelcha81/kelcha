@@ -11,6 +11,7 @@ import { useInterval } from '@/hooks/useInterval';
 import { registerHotkey } from '@/lib/hotkeys';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Kbd } from '@/components/ui/kbd';
+import { TimezoneSelect } from '@/components/TimezoneSelect';
 
 /**
  * Playback transport: step back / play-pause / step forward + a candle-speed
@@ -170,6 +171,11 @@ export function PlaybackBar() {
             </option>
           ))}
         </select>
+      </label>
+
+      <label className="flex items-center gap-1 text-xs text-slate-400">
+        TZ
+        <TimezoneSelect />
       </label>
     </div>
   );
