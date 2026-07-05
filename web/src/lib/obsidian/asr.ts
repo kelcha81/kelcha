@@ -157,6 +157,27 @@ function embedText(c: { path: string; note?: string }): string {
   return c.note?.trim() ? `![[${c.path}]]\n\n${c.note.replace(/\r?\n/g, ' ').trim()}` : `![[${c.path}]]`;
 }
 
+/** Reverse of embedText: pull `![[path]]` embeds (+ the annotation line under
+ *  each) back out of a note's markdown, so a reopened note can show its saved
+ *  screenshots. */
+export function parseEmbeds(md: string): { path: string; note?: string }[] {
+  const lines = md.split(/\r?\n/);
+  const embed = /!\[\[([^\]]+)\]\]/;
+  const out: { path: string; note?: string }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = embed.exec(lines[i]);
+    if (!m) continue;
+    const noteLines: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const l = lines[j];
+      if (!l.trim() || l.startsWith('#') || embed.test(l)) break;
+      noteLines.push(l.trim());
+    }
+    out.push({ path: m[1].trim(), note: noteLines.join(' ') || undefined });
+  }
+  return out;
+}
+
 // Fill `![]()` placeholders under any `## <tf>` heading, matched by timeframe
 // only (no Pre/Post sections) — used by Forecast notes. Leftovers go to "## Charts".
 export function embedByTimeframe(md: string, captures: { tf: string; path: string; note?: string }[]): string {

@@ -10,10 +10,11 @@ import {
   parseFrontmatter,
   parseFrontmatterKeys,
   parseYamlList,
+  parseEmbeds,
   AUTO_FILLED_KEYS,
   PLUGIN_MANAGED_KEYS
 } from '@/lib/obsidian/asr';
-import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/obsidian/vaultFs';
+import { useVault, writeNote, listNotes, readNote, readAttachment, readTemplate } from '@/lib/obsidian/vaultFs';
 import { saveJournalEntry } from '@/lib/journal';
 import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
@@ -64,6 +65,7 @@ interface Capture {
   dataUrl: string;
   name: string;
   note: string; // annotation written below the screenshot in the note
+  existing?: boolean; // already embedded in the reopened note (don't re-embed)
 }
 // Editable keys shown when the user has no custom template (mirrors the built-in).
 const DEFAULT_KEYS = ['killzone', 'po3_phase', 'setup_grade', 'confidence', LIST_KEY];
@@ -213,9 +215,30 @@ export function JournalModal({
       }
       setFields(next);
       setIndicators(parseYamlList(fm[LIST_KEY]));
-      setCaptures([]);
       setEditing({ name, baseMd: content });
       setMsg(null);
+      // Reload the note's already-saved screenshots so they're visible on reopen.
+      const loaded: Capture[] = [];
+      for (const e of parseEmbeds(content)) {
+        const fname = (e.path.split('/').pop() ?? e.path).trim();
+        if (!/\.(png|jpe?g|webp)$/i.test(fname)) continue;
+        const dataUrl = await readAttachment(folder, fname);
+        if (!dataUrl) continue;
+        const m = /-(pre|post)-(.+?)-[a-z0-9]{4,8}\.[a-z]+$/i.exec(fname);
+        const stage: 'pre' | 'post' = m?.[1] === 'post' ? 'post' : 'pre';
+        const tfRaw = m?.[2] ?? '';
+        const slot = SLOTS.find((s) => s.stage === stage && s.tf.replace(/[^A-Za-z0-9._-]/g, '') === tfRaw);
+        loaded.push({
+          id: Math.random().toString(36).slice(2, 8),
+          stage,
+          tf: slot?.tf ?? tfRaw,
+          dataUrl,
+          name: fname,
+          note: e.note ?? '',
+          existing: true
+        });
+      }
+      setCaptures(loaded);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     }
@@ -237,8 +260,11 @@ export function JournalModal({
       // Each capture is written under <folder>/attachments and embedded by path,
       // with its annotation directly below the screenshot.
       const relPath = (name: string) => [folder, ATTACH, name].filter(Boolean).join('/');
-      const asrCaptures = captures.map((c) => ({ stage: c.stage, tf: c.tf, path: relPath(c.name), note: c.note }));
-      const images = captures.map((c) => ({ name: c.name, dataUrl: c.dataUrl }));
+      // Captures reloaded from an existing note are already embedded + on disk —
+      // only write/embed NEW ones so reopening + saving doesn't duplicate them.
+      const newCaptures = captures.filter((c) => !c.existing);
+      const asrCaptures = newCaptures.map((c) => ({ stage: c.stage, tf: c.tf, path: relPath(c.name), note: c.note }));
+      const images = newCaptures.map((c) => ({ name: c.name, dataUrl: c.dataUrl }));
 
       let filename: string;
       let markdown: string;

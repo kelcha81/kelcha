@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, CalendarRange, Camera, Upload, Trash2 } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
 import { captureActivePane } from '@/lib/chartShot';
-import { parseFrontmatter, parseFrontmatterKeys, parseYamlList, PLUGIN_MANAGED_KEYS } from '@/lib/obsidian/asr';
+import { parseFrontmatter, parseFrontmatterKeys, parseYamlList, parseEmbeds, PLUGIN_MANAGED_KEYS } from '@/lib/obsidian/asr';
 import { buildForecast, updateForecast, FORECAST_AUTO_KEYS, TEMPLATE_FILE, type ForecastHorizon } from '@/lib/obsidian/forecast';
-import { useVault, writeNote, listNotes, readNote, readTemplate } from '@/lib/obsidian/vaultFs';
+import { useVault, writeNote, listNotes, readNote, readAttachment, readTemplate } from '@/lib/obsidian/vaultFs';
 import { saveForecastEntry } from '@/lib/journal';
 import { notionJournal } from '@/lib/notion';
 import { useAuth } from '@/lib/auth';
@@ -27,6 +27,7 @@ interface Capture {
   dataUrl: string;
   name: string;
   note: string; // annotation written below the screenshot in the note
+  existing?: boolean; // already embedded in the reopened note (don't re-embed)
 }
 
 /** Create a Forecast (pre-trade plan) note in the Obsidian vault. */
@@ -114,9 +115,21 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
       }
       setFields(next);
       setTargets(parseYamlList(fm[LIST_KEY]).join('\n'));
-      setCaptures([]);
       setEditing({ name, baseMd: content });
       setMsg(null);
+      // Load the note's already-saved screenshots back from the vault so they're
+      // visible (and you can add more) instead of starting from an empty list.
+      const loaded: Capture[] = [];
+      for (const e of parseEmbeds(content)) {
+        const fname = (e.path.split('/').pop() ?? e.path).trim();
+        if (!/\.(png|jpe?g|webp)$/i.test(fname)) continue;
+        const dataUrl = await readAttachment(cfg.forecastFolder, fname);
+        if (!dataUrl) continue;
+        const tfRaw = /-forecast-(.+?)-[a-z0-9]{4,8}\.[a-z]+$/i.exec(fname)?.[1] ?? '';
+        const tf = SLOTS.find((s) => s.replace(/[^A-Za-z0-9._-]/g, '') === tfRaw) ?? SLOTS[0];
+        loaded.push({ id: Math.random().toString(36).slice(2, 8), tf, dataUrl, name: fname, note: e.note ?? '', existing: true });
+      }
+      setCaptures(loaded);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     }
@@ -158,8 +171,11 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
     setMsg(null);
     try {
       const relPath = (name: string) => [cfg.forecastFolder, ATTACH, name].filter(Boolean).join('/');
-      const fcCaptures = captures.map((c) => ({ tf: c.tf, path: relPath(c.name), note: c.note }));
-      const images = captures.map((c) => ({ name: c.name, dataUrl: c.dataUrl }));
+      // Captures reloaded from an existing note are already embedded in its body
+      // and already on disk — only write/embed the NEW ones to avoid duplicates.
+      const newCaptures = captures.filter((c) => !c.existing);
+      const fcCaptures = newCaptures.map((c) => ({ tf: c.tf, path: relPath(c.name), note: c.note }));
+      const images = newCaptures.map((c) => ({ name: c.name, dataUrl: c.dataUrl }));
       const list = targets
         .split(/[\n,]/)
         .map((s) => s.trim())

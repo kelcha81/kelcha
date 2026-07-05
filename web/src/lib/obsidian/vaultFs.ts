@@ -140,6 +140,27 @@ export async function readTemplate(templatesFolder: string, file: string): Promi
   return root ? readFileText(root, templatesFolder, file) : null;
 }
 
+/** Read an image attachment from `<folder>/attachments/<name>` as a data URL,
+ *  so a reopened note's already-saved screenshots can be shown. */
+export async function readAttachment(folder: string, name: string): Promise<string | null> {
+  const root = await getVaultHandle();
+  if (!root || !(await permission(root, 'read', false))) return null;
+  try {
+    const dir = await getDir(root, folder, false);
+    const att = await dir.getDirectoryHandle('attachments');
+    const fh = await att.getFileHandle(name);
+    const file = await fh.getFile();
+    return await new Promise<string | null>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(file);
+    });
+  } catch {
+    return null;
+  }
+}
+
 /** React hook: tracks whether a vault is connected (handle present + permission granted). */
 export function useVault() {
   const [handle, setHandle] = useState<DirHandle | null>(null);
