@@ -81,24 +81,32 @@ async function main() {
   console.log(`Candle refresh ${FROM}..${TO} for ${SYMBOLS.length} symbols`);
   let failed = 0;
   for (const s of SYMBOLS) {
-    try {
-      await run('download.js', [s.symbol, s.instrument, FROM, TO]);
-      await run('package-data.js', [s.symbol, String(s.precision)]);
-      // Verify the LOCAL package is complete before it goes anywhere.
-      const checked = await verifySymbol(s.symbol);
-      if (BUCKET) {
-        // Publish via the GCS SDK: chunks first, manifest last (atomic swap of
-        // the view). A failure here leaves the previous manifest — and thus the
-        // previous consistent data — untouched (keep-last-good).
-        const uploaded = await uploadSymbol(s.symbol, join(DATA_ROOT, s.symbol), BUCKET);
-        console.log(`[${s.symbol}] refreshed — ${checked} verified, ${uploaded} published to ${BUCKET}`);
-      } else {
-        console.log(`[${s.symbol}] refreshed — ${checked} files verified (no bucket; wrote ${DATA_ROOT})`);
+    // Retry the whole per-symbol pipeline once: the download child can be
+    // killed by a transient resource spike (exit null), and re-running with the
+    // warm dukascache usually succeeds. keep-last-good means a symbol that fails
+    // both attempts simply keeps its previous published data.
+    let ok = false;
+    for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+      try {
+        await run('download.js', [s.symbol, s.instrument, FROM, TO]);
+        await run('package-data.js', [s.symbol, String(s.precision)]);
+        // Verify the LOCAL package is complete before it goes anywhere.
+        const checked = await verifySymbol(s.symbol);
+        if (BUCKET) {
+          // Publish via the GCS SDK: chunks first, manifest last (atomic swap of
+          // the view). A failure here leaves the previous manifest — and thus
+          // the previous consistent data — untouched (keep-last-good).
+          const uploaded = await uploadSymbol(s.symbol, join(DATA_ROOT, s.symbol), BUCKET);
+          console.log(`[${s.symbol}] refreshed — ${checked} verified, ${uploaded} published to ${BUCKET}`);
+        } else {
+          console.log(`[${s.symbol}] refreshed — ${checked} files verified (no bucket; wrote ${DATA_ROOT})`);
+        }
+        ok = true;
+      } catch (e) {
+        console.error(`[${s.symbol}] attempt ${attempt}/2 failed:`, e?.message ?? e);
       }
-    } catch (e) {
-      failed++;
-      console.error(`[${s.symbol}] FAILED:`, e?.message ?? e);
     }
+    if (!ok) failed++;
   }
   console.log(`Refresh done — ${SYMBOLS.length - failed}/${SYMBOLS.length} ok`);
   if (failed) process.exitCode = 1;
