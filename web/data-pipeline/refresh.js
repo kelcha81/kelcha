@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 
 // Daily candle refresh (Cloud Run Job). For each symbol, re-pull M1 from
 // Dukascopy up to "yesterday" and re-package into the candles bucket (mounted at
@@ -33,6 +34,42 @@ function run(script, args) {
   });
 }
 
+const DATA_ROOT = join(HERE, '..', 'public', 'data');
+
+/**
+ * Post-package verification gate. Reads the symbol's just-written manifest and
+ * confirms every file it references (each tf's whole `<tf>.json` and every
+ * monthly `chunk`) exists on the bucket and is non-empty. Because the packager
+ * writes the manifest LAST, a manifest that points at a missing/zero-byte file
+ * means the write didn't fully persist (e.g. gcsfuse dropped it) — we throw so
+ * the run is marked failed and alerting fires, rather than silently publishing
+ * a manifest the charts will 404 on. Returns the number of files checked.
+ */
+async function verifySymbol(symbol) {
+  const dir = join(DATA_ROOT, symbol);
+  const manifest = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8'));
+  const files = [];
+  for (const tf of Object.values(manifest.timeframes ?? {})) {
+    if (tf.file) files.push(tf.file);
+    for (const chunk of tf.chunks ?? []) files.push(chunk);
+  }
+  const missing = [];
+  for (const rel of files) {
+    try {
+      const s = await stat(join(dir, rel));
+      if (!s.isFile() || s.size === 0) missing.push(`${rel} (empty)`);
+    } catch {
+      missing.push(`${rel} (missing)`);
+    }
+  }
+  if (missing.length) {
+    throw new Error(
+      `${symbol}: manifest references ${missing.length}/${files.length} unwritten files: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ' …' : ''}`
+    );
+  }
+  return files.length;
+}
+
 async function main() {
   console.log(`Candle refresh ${FROM}..${TO} for ${SYMBOLS.length} symbols`);
   let failed = 0;
@@ -40,7 +77,8 @@ async function main() {
     try {
       await run('download.js', [s.symbol, s.instrument, FROM, TO]);
       await run('package-data.js', [s.symbol, String(s.precision)]);
-      console.log(`[${s.symbol}] refreshed`);
+      const checked = await verifySymbol(s.symbol);
+      console.log(`[${s.symbol}] refreshed — ${checked} files verified`);
     } catch (e) {
       failed++;
       console.error(`[${s.symbol}] FAILED:`, e?.message ?? e);
