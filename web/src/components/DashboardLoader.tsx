@@ -3,7 +3,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useWorkspaceStore, useActiveTab } from '@/store/workspaceStore';
 import { useReplayStore } from '@/store/replayStore';
-import { getBounds } from '@/lib/candleSource';
+import { getBounds, getRange } from '@/lib/candleSource';
+
+// Longest market-closed stretch to look across when snapping the head to real
+// data (forex: a weekend plus an adjoining holiday ~= 3 days).
+const MAX_GAP_MS = 4 * 24 * 60 * 60 * 1000;
 
 /**
  * Starts a replay session for the active tab: reads the symbol's bounds from
@@ -39,14 +43,27 @@ export function DashboardLoader({ children }: { children: ReactNode }) {
     (async () => {
       const bounds = await getBounds(tab.symbol);
       if (!bounds) throw new Error(`No packaged data found for ${tab.symbol}`);
-      if (!cancelled) {
-        setSession(tab.symbol, bounds, {
-          start: tab.start,
-          end: tab.end,
-          startTs: tab.savedHead
-        });
-        setReady(true);
+
+      // Snap the head to the first real bar at/after the requested start. A
+      // session that begins in a market-closed gap (e.g. a Jan-1 holiday, or a
+      // weekend) would otherwise park the head in dead air where nothing forms
+      // and playback looks frozen until the market reopens hours/days later.
+      const wanted = tab.savedHead ?? tab.start ?? bounds.min;
+      let startTs = wanted;
+      try {
+        const probe = await getRange(tab.symbol, 'm1', wanted, Math.min(bounds.max, wanted + MAX_GAP_MS));
+        if (probe.length && probe[0].timestamp > wanted) startTs = probe[0].timestamp;
+      } catch {
+        /* keep `wanted` if the probe fetch fails — bounds still let it play */
       }
+      if (cancelled) return;
+
+      setSession(tab.symbol, bounds, {
+        start: tab.start,
+        end: tab.end,
+        startTs
+      });
+      setReady(true);
     })().catch((e: unknown) => {
       if (!cancelled) setError(e instanceof Error ? e.message : String(e));
     });
