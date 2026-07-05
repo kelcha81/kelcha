@@ -45,7 +45,7 @@ import { registerCircle, registerTriangle, CIRCLE, TRIANGLE } from '@/lib/overla
 import { registerRanges, DATE_RANGE, PRICE_RANGE, DATE_PRICE_RANGE } from '@/lib/overlays/ranges';
 import { registerLines2, TREND_ANGLE_TOOL, INFO_LINE_TOOL, PITCHFORK_TOOL } from '@/lib/overlays/lines2';
 import { registerMarkers, FLAG_TOOL, ARROW_UP_TOOL, ARROW_DOWN_TOOL } from '@/lib/overlays/markers';
-import { registerCurves, PATH, CURVE } from '@/lib/overlays/curves';
+import { registerCurves, PATH2, PATH3, PATH4, CURVE } from '@/lib/overlays/curves';
 
 // Declarative drawing-tool registry: the DrawingToolbar renders whatever is
 // here — adding a tool = one entry (+ overlay registration if custom).
@@ -76,7 +76,9 @@ export const TOOLS: ToolDef[] = [
   { id: 'cross', label: 'Cross line', group: 'Lines', overlay: CROSS_LINE, Icon: Crosshair },
   { id: 'trendAngle', label: 'Trend angle', group: 'Lines', overlay: TREND_ANGLE_TOOL, Icon: Radius },
   { id: 'infoLine', label: 'Info line', group: 'Lines', overlay: INFO_LINE_TOOL, Icon: Info },
-  { id: 'path', label: 'Path (3-leg)', group: 'Lines', overlay: PATH, Icon: Waypoints },
+  { id: 'path2', label: 'Path (2-leg)', group: 'Lines', overlay: PATH2, Icon: Waypoints },
+  { id: 'path', label: 'Path (3-leg)', group: 'Lines', overlay: PATH3, Icon: Waypoints },
+  { id: 'path4', label: 'Path (4-leg)', group: 'Lines', overlay: PATH4, Icon: Waypoints },
   { id: 'curve', label: 'Curved line', group: 'Lines', overlay: CURVE, Icon: Spline },
   { id: 'price', label: 'Price line', group: 'Lines', overlay: 'priceLine', Icon: DollarSign },
   // Channels
