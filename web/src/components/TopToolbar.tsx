@@ -5,14 +5,12 @@ import { Square, Columns2, LayoutGrid, Boxes, FlaskConical, Database, CalendarRa
 import { useActiveTab, useWorkspaceStore } from '@/store/workspaceStore';
 import { useAuth } from '@/lib/auth';
 import { type LayoutCount } from '@/lib/layout';
-import { getSymbolInfo } from '@/lib/symbols';
 import { IndicatorsMenu } from '@/components/IndicatorsMenu';
 import { ThemeMenu } from '@/components/ThemeMenu';
 import { PluginManager } from '@/components/PluginManager';
 import { StrategiesPanel } from '@/components/StrategiesPanel';
 import { DataManager } from '@/components/DataManager';
-import { ForecastModal } from '@/components/ForecastModal';
-import { JournalModal } from '@/components/JournalModal';
+import { useJournalDock } from '@/store/journalDockStore';
 import { EngineStatus } from '@/components/EngineStatus';
 import { SyncStatus } from '@/components/SyncStatus';
 
@@ -32,8 +30,7 @@ export function TopToolbar() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [strategiesOpen, setStrategiesOpen] = useState(false);
   const [dataOpen, setDataOpen] = useState(false);
-  const [forecastOpen, setForecastOpen] = useState(false);
-  const [journalOpen, setJournalOpen] = useState(false);
+  const showDock = useJournalDock((s) => s.show);
 
   return (
     <div className="flex items-center gap-3 border-b border-slate-800 bg-slate-900/60 px-3 py-2">
@@ -87,8 +84,8 @@ export function TopToolbar() {
 
       <button
         type="button"
-        onClick={() => setForecastOpen(true)}
-        title="Create a Forecast (pre-trade plan) in Obsidian"
+        onClick={() => showDock('forecast')}
+        title="Open the Forecast dock (pre-trade plan)"
         className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
       >
         <CalendarRange className="h-3.5 w-3.5" /> Forecast
@@ -96,8 +93,8 @@ export function TopToolbar() {
 
       <button
         type="button"
-        onClick={() => setJournalOpen(true)}
-        title="Open or update a Backtest ASR in Obsidian"
+        onClick={() => showDock('journal')}
+        title="Open the Journal dock (Backtest ASR)"
         className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
       >
         <BookOpen className="h-3.5 w-3.5" /> Journal
@@ -111,14 +108,6 @@ export function TopToolbar() {
       {pluginsOpen && <PluginManager onClose={() => setPluginsOpen(false)} />}
       {hasTraining && strategiesOpen && <StrategiesPanel onClose={() => setStrategiesOpen(false)} />}
       {dataOpen && <DataManager onClose={() => setDataOpen(false)} />}
-      {forecastOpen && <ForecastModal symbol={activeTab.symbol} onClose={() => setForecastOpen(false)} />}
-      {journalOpen && (
-        <JournalModal
-          symbol={activeTab.symbol}
-          pricePrecision={getSymbolInfo(activeTab.symbol).pricePrecision}
-          onClose={() => setJournalOpen(false)}
-        />
-      )}
     </div>
   );
 }

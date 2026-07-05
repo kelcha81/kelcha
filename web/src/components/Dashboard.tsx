@@ -21,6 +21,8 @@ import { PlaybackBar } from '@/components/PlaybackBar';
 import { HeadClock } from '@/components/HeadClock';
 import { DateJump } from '@/components/DateJump';
 import { TradingPanel } from '@/components/TradingPanel';
+import { JournalDock } from '@/components/JournalDock';
+import { useJournalDock } from '@/store/journalDockStore';
 import { TradeLines } from '@/components/TradeLines';
 import { IctAnnotations } from '@/components/IctAnnotations';
 import { ChartPluginsBridge } from '@/components/ChartPluginsBridge';
@@ -108,6 +110,11 @@ export function Dashboard() {
   const { count, panes } = tab.layout;
   const rightPanelRef = useRef<ImperativePanelHandle>(null);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const dockOpen = useJournalDock((s) => s.open);
+  // Opening the dock must reveal the rail if it was collapsed.
+  useEffect(() => {
+    if (dockOpen && rightPanelRef.current?.isCollapsed()) rightPanelRef.current.expand();
+  }, [dockOpen]);
 
   // Restore persisted backtest results (per tab) after a full reload.
   useEffect(() => {
@@ -199,7 +206,19 @@ export function Dashboard() {
             onExpand={() => setRightCollapsed(false)}
             className="min-w-0"
           >
-            <TradingPanel />
+            {dockOpen ? (
+              <PanelGroup direction="vertical">
+                <Panel defaultSize={55} minSize={20} className="min-h-0">
+                  <TradingPanel />
+                </Panel>
+                <PanelResizeHandle className="h-1 bg-slate-800 transition-colors hover:bg-blue-600 data-[resize-handle-state=drag]:bg-blue-600" />
+                <Panel defaultSize={45} minSize={20} className="min-h-0">
+                  <JournalDock />
+                </Panel>
+              </PanelGroup>
+            ) : (
+              <TradingPanel />
+            )}
           </Panel>
         </PanelGroup>
       </div>

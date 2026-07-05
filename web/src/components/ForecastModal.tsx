@@ -31,7 +31,15 @@ interface Capture {
 }
 
 /** Create a Forecast (pre-trade plan) note in the Obsidian vault. */
-export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
+export function ForecastModal({
+  symbol,
+  onClose,
+  docked = false
+}: {
+  symbol: string;
+  onClose: () => void;
+  docked?: boolean;
+}) {
   const cfg = useObsidianStore();
   const vault = useVault();
   const { user } = useAuth();
@@ -257,7 +265,7 @@ export function ForecastModal({ symbol, onClose }: { symbol: string; onClose: ()
   };
 
   return (
-    <Modal onClose={onClose} ariaLabel="New forecast" className="w-[900px]">
+    <Modal onClose={onClose} ariaLabel="New forecast" className="w-[900px]" docked={docked}>
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CalendarRange className="h-4 w-4" /> New Forecast — {symbol.toUpperCase()}

@@ -80,12 +80,14 @@ export function JournalModal({
   trade,
   symbol,
   pricePrecision,
-  onClose
+  onClose,
+  docked = false
 }: {
   trade?: JournalTrade | null; // omitted when opened standalone to edit an existing ASR
   symbol: string;
   pricePrecision: number;
   onClose: () => void;
+  docked?: boolean;
 }) {
   const cfg = useObsidianStore();
   const vault = useVault();
@@ -368,7 +370,7 @@ export function JournalModal({
   };
 
   return (
-    <Modal onClose={onClose} ariaLabel="Journal" className="w-[900px]">
+    <Modal onClose={onClose} ariaLabel="Journal" className="w-[900px]" docked={docked}>
         <div className="flex items-center justify-between border-b border-slate-800 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <BookOpen className="h-4 w-4" /> Journal to {toNotion ? 'Notion' : 'Obsidian'}

@@ -14,6 +14,7 @@ export function Modal({
   onClose,
   ariaLabel,
   className = 'w-[560px]',
+  docked = false,
   children
 }: {
   onClose: () => void;
@@ -21,8 +22,18 @@ export function Modal({
   ariaLabel: string;
   /** Width/height classes for the panel (e.g. "w-[620px]", "h-[80vh] w-[860px]"). */
   className?: string;
+  /** Render in-flow (fills its container) instead of as a centered overlay —
+   *  used to dock Journal/Forecast in the side rail. */
+  docked?: boolean;
   children: ReactNode;
 }) {
+  if (docked) {
+    return (
+      <div className="flex h-full w-full flex-col overflow-hidden bg-slate-900 text-slate-200" aria-label={ariaLabel}>
+        {children}
+      </div>
+    );
+  }
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
