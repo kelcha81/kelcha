@@ -42,9 +42,18 @@ export function getManifest(symbol: string): Promise<Manifest> {
   const hit = manifests.get(symbol);
   if (hit && Date.now() - hit.at < MANIFEST_TTL) return hit.promise;
   const promise = (async () => {
-    const res = await fetch(`/api/data/${symbol}/manifest.json`);
-    if (!res.ok) throw new Error(`No packaged data for ${symbol} (HTTP ${res.status})`);
-    return (await res.json()) as Manifest;
+    // Retry transient network/DNS blips with backoff — a brief hiccup on the
+    // manifest must not blank the whole chart (getRange depends on it).
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const res = await fetch(`/api/data/${symbol}/manifest.json`);
+        if (!res.ok) throw new Error(`No packaged data for ${symbol} (HTTP ${res.status})`);
+        return (await res.json()) as Manifest;
+      } catch (e) {
+        if (attempt >= 3) throw e;
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+      }
+    }
   })();
   manifests.set(symbol, { at: Date.now(), promise });
   promise.catch(() => manifests.delete(symbol)); // failed fetches retry next call
