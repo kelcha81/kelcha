@@ -7,7 +7,10 @@ import { getRange } from '@/lib/candleSource';
 // Bars kept loaded around the head. The display window (closed bars) reloads only
 // near its edges; the forming bar's M1 covers just the current period and reloads
 // only when the head crosses into a new bar — so even monthly stays cheap.
-const DISPLAY_BARS = 600;
+// This is a FIXED cap (bounded per timeframe): d1≈3yr, h1≈50d, m15≈12d of history
+// behind the head. Deliberately not head-unbounded — an earlier "load all history
+// on scroll" attempt let this balloon to the whole dataset and froze playback.
+const DISPLAY_BARS = 1200;
 const FORWARD_BARS = 400;
 const MARGIN_BARS = 120;
 
