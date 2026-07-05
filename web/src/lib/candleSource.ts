@@ -181,14 +181,20 @@ function withMetaLock(symbol: string, fn: () => Promise<void>): Promise<void> {
   return next;
 }
 
+/** A manifest-listed file the bucket doesn't have yet — e.g. the manifest was
+ *  published a moment before its (large) chunk finished uploading during a
+ *  refresh. Treated as a temporary gap, not a hard error. */
+class MissingChunkError extends Error {}
+
 async function fetchJson(path: string): Promise<Candle[]> {
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await fetch(path);
+      if (res.status === 404) throw new MissingChunkError(path); // don't retry — won't appear in 500ms
       if (!res.ok) throw new Error(`Failed to fetch ${path} (HTTP ${res.status})`);
       return (await res.json()) as Candle[];
     } catch (e) {
-      if (attempt >= 2) throw e;
+      if (e instanceof MissingChunkError || attempt >= 2) throw e;
       await new Promise((r) => setTimeout(r, 500));
     }
   }
@@ -216,7 +222,15 @@ async function loadRecord(symbol: string, tf: Timeframe, req: ChunkRequest, mani
       }
     }
 
-    const data = await fetchJson(`/api/data/${symbol}/${req.path}`);
+    let data: Candle[];
+    try {
+      data = await fetchJson(`/api/data/${symbol}/${req.path}`);
+    } catch (e) {
+      // Manifest leads the bucket (partial/in-progress upload): gap this record
+      // for now and DON'T cache the emptiness, so it refills once the file lands.
+      if (e instanceof MissingChunkError) return [];
+      throw e;
+    }
     // Chunk first, meta second: a crash between them means a harmless refetch,
     // never a trusted-but-truncated record.
     if (month !== null) await putChunk(symbol, tf, month, data);

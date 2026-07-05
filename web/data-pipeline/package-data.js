@@ -1,4 +1,4 @@
-import { readdir, readFile, mkdir, writeFile, rm } from 'node:fs/promises';
+import { readdir, readFile, mkdir, writeFile, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { aggregateCandles } from './aggregate.js';
@@ -104,13 +104,38 @@ function chunkMonth(ts) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Reset a symbol's output directory the gcsfuse-safe way: unlink every FILE
+ * (recursively) but NEVER rmdir. On the Cloud Run refresh Job, OUT_DIR is a
+ * gcsfuse mount, and `rm(dir, {recursive})` issues RmDirOp calls that race on
+ * gcsfuse's synthetic directories and throw ENOTEMPTY — which crashed the
+ * packager mid-run (after it had already deleted the old m1 chunks), leaving
+ * symbols with a fresh manifest but missing candle files. Deleting only files
+ * sidesteps rmdir entirely; gcsfuse drops empty synthetic dirs on its own, and
+ * mkdir below is idempotent. Since months only grow (2022-01..present), leaving
+ * the dir tree in place never leaves stale chunk files behind.
+ */
+async function clearFiles(dir) {
+  let entries;
+  try {
+    entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  } catch (err) {
+    if (err.code === 'ENOENT') return; // first run for this symbol
+    throw err;
+  }
+  for (const ent of entries) {
+    if (!ent.isFile()) continue;
+    await unlink(join(ent.parentPath ?? ent.path, ent.name)).catch(() => {});
+  }
+}
+
 async function main() {
   const m1Path = await findM1File();
   console.log(`[${SYMBOL}] reading ${m1Path} ...`);
   const m1 = JSON.parse(await readFile(m1Path, 'utf8'));
   console.log(`[${SYMBOL}] ${m1.length.toLocaleString()} M1 candles, precision ${pricePrecision}`);
 
-  await rm(OUT_DIR, { recursive: true, force: true });
+  await clearFiles(OUT_DIR);
   await mkdir(join(OUT_DIR, 'm1'), { recursive: true });
 
   // --- M1 monthly chunks (UTC month, just for file splitting) ---
