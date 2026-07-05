@@ -1,5 +1,26 @@
 import type { ChartPlugin, PluginParamsSchema } from './types';
 import { getCanvasFont } from '@/lib/fonts';
+import { useIctStore } from '@/store/ictStore';
+import { ICT_NAME } from './ict';
+
+/** ICT Killzones & Pivots — a custom main-pane indicator (see lib/plugins/ict.ts).
+ *  Config lives in ictStore; the indicator redraws live when it changes. */
+const ictKillzones: ChartPlugin = {
+  meta: {
+    id: 'ict',
+    name: 'ICT Killzones',
+    type: 'overlay',
+    description: 'Session killzone boxes (Asia / London / NY) + high/low pivot lines.'
+  },
+  attach: ({ chart }) => {
+    const paneId = chart.createIndicator({ name: ICT_NAME }, true, { id: 'candle_pane' });
+    const unsub = useIctStore.subscribe(() => chart.overrideIndicator({ name: ICT_NAME }));
+    return () => {
+      unsub();
+      if (paneId) chart.removeIndicator(paneId, ICT_NAME);
+    };
+  }
+};
 
 // Built-in plugins backed by real KLineChart APIs so toggling visibly changes
 // the chart. Indicators accept configurable calc params.
@@ -66,6 +87,7 @@ function indicatorPlugin(
 
 export const BUILTIN_PLUGINS: ChartPlugin[] = [
   watermark,
+  ictKillzones,
   // Overlays on price
   indicatorPlugin('ma', 'MA', 'MA', {
     mainPane: true,

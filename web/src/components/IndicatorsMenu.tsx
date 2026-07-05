@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronDown, Settings } from 'lucide-react';
 import { usePluginStore } from '@/store/pluginStore';
 import { initPlugins, getPlugin } from '@/lib/plugins/registry';
 import { MenuPopover } from '@/components/ui/menu';
+import { ICTSettings } from '@/components/ICTSettings';
 
 /**
  * Dropdown listing all plugins: toggle on/off, and (for indicators) edit their
@@ -21,10 +22,14 @@ export function IndicatorsMenu() {
   const toggle = usePluginStore((s) => s.toggle);
   const setParams = usePluginStore((s) => s.setParams);
 
+  const [ictOpen, setIctOpen] = useState(false);
+
   const list = Object.values(registered);
   const onCount = list.filter((m) => enabled[m.id]).length;
 
   return (
+    <>
+    {ictOpen && <ICTSettings onClose={() => setIctOpen(false)} />}
     <MenuPopover
       title="Indicators"
       trigger={
@@ -43,13 +48,29 @@ export function IndicatorsMenu() {
               <div key={meta.id} className="rounded px-1 py-1 hover:bg-slate-800/60">
                 <label className="flex cursor-pointer items-center justify-between gap-2">
                   <span className="text-sm text-slate-200">{meta.name}</span>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggle(meta.id)}
-                    data-testid={`plugin-toggle-${meta.id}`}
-                    className="h-4 w-4 accent-blue-600"
-                  />
+                  <span className="flex items-center gap-2">
+                    {meta.id === 'ict' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIctOpen(true);
+                        }}
+                        title="ICT Killzones settings"
+                        className="text-slate-400 hover:text-white"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(meta.id)}
+                      data-testid={`plugin-toggle-${meta.id}`}
+                      className="h-4 w-4 accent-blue-600"
+                    />
+                  </span>
                 </label>
                 {on && schema && (
                   <div className="mt-1 flex flex-wrap gap-2 pl-1">
@@ -76,5 +97,6 @@ export function IndicatorsMenu() {
             );
           })}
     </MenuPopover>
+    </>
   );
 }

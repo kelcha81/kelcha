@@ -1,5 +1,6 @@
 import { usePluginStore } from '@/store/pluginStore';
 import { BUILTIN_PLUGINS } from './builtins';
+import { registerICT } from './ict';
 import type { ChartPlugin } from './types';
 
 // Registers built-in plugins' metadata into the plugin store (for the UI/toggles)
@@ -12,6 +13,7 @@ export function initPlugins(): void {
   if (initialized) return;
   initialized = true;
 
+  registerICT(); // register the ICT Killzones custom indicator before any createIndicator
   const { register } = usePluginStore.getState();
   for (const plugin of BUILTIN_PLUGINS) {
     byId.set(plugin.meta.id, plugin);
