@@ -6,6 +6,7 @@ import { useReplayStore } from '@/store/replayStore';
 import { useChartStore } from '@/store/chartStore';
 import { useActiveTab } from '@/store/workspaceStore';
 import { TIMEFRAME_MINUTES } from '@/lib/visibleData';
+import { getRange } from '@/lib/candleSource';
 import { useInterval } from '@/hooks/useInterval';
 import { registerHotkey } from '@/lib/hotkeys';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -20,6 +21,14 @@ import { Kbd } from '@/components/ui/kbd';
 
 // One real-time tick per second; the dropdown controls market-time per tick.
 const TICK_MS = 1000;
+
+// Gap-skip: while playing, if there's no real m1 data within GAP_SKIP_MS ahead of
+// the head, it's sitting in a market-closed stretch (weekend/holiday) — jump to
+// the next actual bar. 30 min is well above the 1-min bar cadence, so normal
+// data (and brief low-liquidity minutes) is never skipped. Look up to a week
+// ahead to clear even long holiday closures.
+const GAP_SKIP_MS = 30 * 60_000;
+const GAP_LOOKAHEAD_MS = 7 * 24 * 60 * 60_000;
 
 // stepSize = market time advanced per real second while playing.
 const STEP_OPTIONS = [
@@ -46,6 +55,30 @@ export function PlaybackBar() {
 
   // Drive the replay head while playing; `null` delay pauses the interval.
   useInterval(stepForward, isPlaying ? TICK_MS : null);
+
+  // Skip market-closed gaps while playing: if no real m1 bar sits within the
+  // next GAP_SKIP_MS, jump the head straight to the next actual candle so
+  // playback doesn't crawl through empty weekends/holidays.
+  const symbol = useReplayStore((s) => s.symbol);
+  const head = useReplayStore((s) => s.currentTimestamp);
+  const bounds = useReplayStore((s) => s.bounds);
+  useEffect(() => {
+    if (!isPlaying || !symbol || !head || !bounds) return;
+    let cancelled = false;
+    (async () => {
+      // Fast path: any data close ahead means we're not in a gap.
+      const near = await getRange(symbol, 'm1', head, Math.min(bounds.max, head + GAP_SKIP_MS));
+      if (cancelled || near.length) return;
+      // In a gap — find the next real bar and jump to it.
+      const far = await getRange(symbol, 'm1', head, Math.min(bounds.max, head + GAP_LOOKAHEAD_MS));
+      if (!cancelled && far.length && far[0].timestamp > head) {
+        useReplayStore.getState().setTimestamp(far[0].timestamp);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPlaying, symbol, head, bounds]);
 
   // Manual steps move by BARS of the focused pane's timeframe (ref updated in
   // an effect so the stable hotkey handlers always see the current TF).
