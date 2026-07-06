@@ -3,6 +3,8 @@ import { useDrawingsStore, type SavedOverlay } from '@/store/drawingsStore';
 import { useOverlayMenuStore } from '@/store/overlayMenuStore';
 import { useDrawingSettingsStore } from '@/store/drawingSettingsStore';
 import { useToolbarStore, type MagnetMode } from '@/store/toolbarStore';
+import { useChartStore } from '@/store/chartStore';
+import { setGrabCursor } from '@/lib/cursor';
 import { computeVisible } from '@/lib/tfVisibility';
 import type { Timeframe } from '@/store/replayStore';
 
@@ -73,8 +75,28 @@ export function createPersistentOverlay(
       opts.onDone?.();
       return false;
     },
-    onPressedMoveEnd: (e) => save(e),
+    // Grab / grabbing cursor on hover + move, so a movable drawing reads as
+    // draggable — matching the trade levels. Not while a tool is armed (the
+    // crosshair is for placing points) or on a locked drawing.
+    onMouseEnter: (e) => {
+      if (!e.overlay.lock && !useChartStore.getState().activeTool) setGrabCursor('grab');
+      return false;
+    },
+    onMouseLeave: () => {
+      setGrabCursor(null);
+      return false;
+    },
+    onPressedMoveStart: (e) => {
+      if (!e.overlay.lock) setGrabCursor('grabbing');
+      return false;
+    },
+    onPressedMoveEnd: (e) => {
+      save(e);
+      setGrabCursor('grab');
+      return false;
+    },
     onRemoved: (e) => {
+      setGrabCursor(null);
       useDrawingsStore.getState().remove(key, e.overlay.id);
       return false;
     },
