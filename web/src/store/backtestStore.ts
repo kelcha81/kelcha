@@ -20,6 +20,9 @@ export interface BacktestResultData {
   annotations: IctAnnotation[];
   trades: BacktestTrade[];
   ranAt: number;
+  /** Fill granularity the engine used ('m1' intra-bar vs pessimistic 'bar').
+   *  Optional and only set when defined — Firestore rejects undefined fields. */
+  settlement?: 'm1' | 'bar';
 }
 
 interface BacktestVizState {

@@ -73,6 +73,50 @@ class TestEngineShort(unittest.TestCase):
         self.assertAlmostEqual(t.pnl, (10 - 11) * 1)  # short loss
 
 
+class _BracketOnce(Strategy):
+    """One long with SL 95 / TP 105; never re-enters."""
+    def should_long(self) -> bool:
+        return not self.ctx.broker.trades and not self.has_position
+
+    def go_long(self):
+        self.buy_market(1, sl=95.0, tp=105.0)
+
+
+class TestIntraBarM1Settlement(unittest.TestCase):
+    """
+    SL and TP both inside one base bar is ambiguous at bar granularity. With an
+    M1 subpath the broker walks the minutes and resolves the true first touch;
+    without it the pessimistic rule assumes SL first.
+    """
+
+    HOUR = 60 * MIN
+    BASE = [
+        mk(0 * 60 * MIN, 100, 100.5, 99.5, 100),   # decision bar -> buy queued
+        mk(1 * 60 * MIN, 100, 106, 94, 100),        # fill at open; SL and TP both inside
+        mk(2 * 60 * MIN, 100, 100.5, 99.5, 100),
+    ]
+    # inside bar 1: price runs UP through the TP first, only then collapses.
+    M1 = [
+        mk(1 * 60 * MIN + 0 * MIN, 100, 105.5, 99.8, 105),   # TP 105 touched, SL safe
+        mk(1 * 60 * MIN + 1 * MIN, 105, 105.2, 94, 94.5),    # the later dip to SL
+    ]
+
+    def test_m1_subpath_resolves_true_first_touch(self):
+        res = run_backtest(_BracketOnce(), self.BASE, {}, m1=self.M1,
+                           contract_size=1, warmup=0)
+        self.assertEqual(len(res.trades), 1)
+        t = res.trades[0]
+        self.assertEqual(t.reason, "tp")
+        self.assertAlmostEqual(t.exitPrice, 105.0)
+        self.assertEqual(t.exitTime, self.M1[0].timestamp)
+
+    def test_without_m1_pessimistic_sl_first(self):
+        res = run_backtest(_BracketOnce(), self.BASE, {}, m1=None,
+                           contract_size=1, warmup=0)
+        self.assertEqual(len(res.trades), 1)
+        self.assertEqual(res.trades[0].reason, "sl")
+
+
 class TestReferenceStrategySmoke(unittest.TestCase):
     def test_runs_without_error(self):
         # deterministic zigzag; HTF not loaded -> bias falls back to base structure

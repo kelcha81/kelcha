@@ -74,12 +74,15 @@ def liquidity_sweeps(candles: list[Candle], lookback: int = 2) -> list[ICTEvent]
     lows: list = []
     out: list[ICTEvent] = []
 
+    # Within one kind, swings confirm in timestamp order (fixed lookback) and the
+    # prune below preserves order, so each list stays timestamp-sorted and the
+    # most recent swing is simply the last element.
     for c in candles:
         while si < len(sw) and sw[si].confirm_ts <= c.timestamp:
             (highs if sw[si].kind == "high" else lows).append(sw[si])
             si += 1
 
-        ref_high = max((s for s in highs), key=lambda s: s.timestamp, default=None)
+        ref_high = highs[-1] if highs else None
         if ref_high is not None and c.high > ref_high.price and c.close < ref_high.price:
             out.append(ICTEvent(
                 type="liquidity_sweep", direction="bear", t_start=c.timestamp,
@@ -88,7 +91,7 @@ def liquidity_sweeps(candles: list[Candle], lookback: int = 2) -> list[ICTEvent]
             ))
             highs = [s for s in highs if s.price > c.high]
 
-        ref_low = max((s for s in lows), key=lambda s: s.timestamp, default=None)
+        ref_low = lows[-1] if lows else None
         if ref_low is not None and c.low < ref_low.price and c.close > ref_low.price:
             out.append(ICTEvent(
                 type="liquidity_sweep", direction="bull", t_start=c.timestamp,

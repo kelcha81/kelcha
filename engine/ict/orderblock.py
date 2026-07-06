@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Optional
 
 from models import Candle, ICTEvent
+from ict.scan import FirstCross
 from ict.util import atr
 
 
@@ -25,9 +26,20 @@ def detect_order_blocks(candles: list[Candle], atr_period: int = 14,
     if n < 2:
         return []
     a = atr(candles, atr_period)
+    lows = FirstCross([c.low for c in candles], find_leq=True)
+    highs = FirstCross([c.high for c in candles], find_leq=False)
     out: list[ICTEvent] = []
+    # last opposite-color candle so far (dojis update neither).
+    last_down: Optional[int] = None
+    last_up: Optional[int] = None
 
     for i in range(1, n):
+        p = candles[i - 1]
+        if p.close < p.open:
+            last_down = i - 1
+        elif p.close > p.open:
+            last_up = i - 1
+
         c = candles[i]
         if a[i] <= 0:
             continue
@@ -36,14 +48,16 @@ def detect_order_blocks(candles: list[Candle], atr_period: int = 14,
             continue
         up = move > 0
         # last opposite-color candle before this displacement candle.
-        j = _last_opposite(candles, i, want_down=up)
+        j = last_down if up else last_up
         if j is None:
             continue
         ob = candles[j]
         top = ob.body_top if body_only else ob.high
         bottom = ob.body_bottom if body_only else ob.low
         direction = "bull" if up else "bear"
-        mitigated_at = _mitigation(candles, i + 1, direction, top, bottom)
+        # first candle that returns to tap the block after the displacement.
+        k = lows.first(i + 1, top) if up else highs.first(i + 1, bottom)
+        mitigated_at = candles[k].timestamp if k is not None else None
         out.append(ICTEvent(
             type="order_block", direction=direction,
             t_start=ob.timestamp, t_end=mitigated_at, top=top, bottom=bottom,
@@ -51,25 +65,3 @@ def detect_order_blocks(candles: list[Candle], atr_period: int = 14,
             meta={"originTs": ob.timestamp, "displacementTs": c.timestamp},
         ))
     return out
-
-
-def _last_opposite(candles: list[Candle], i: int, want_down: bool) -> Optional[int]:
-    for j in range(i - 1, -1, -1):
-        c = candles[j]
-        if want_down and c.close < c.open:
-            return j
-        if not want_down and c.close > c.open:
-            return j
-    return None
-
-
-def _mitigation(candles: list[Candle], start: int, direction: str,
-                top: float, bottom: float) -> Optional[int]:
-    """First candle that returns to tap the order block, else None."""
-    for j in range(start, len(candles)):
-        c = candles[j]
-        if direction == "bull" and c.low <= top:
-            return c.timestamp
-        if direction == "bear" and c.high >= bottom:
-            return c.timestamp
-    return None

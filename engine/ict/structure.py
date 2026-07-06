@@ -69,13 +69,16 @@ def structure_breaks(candles: list[Candle], lookback: int = 2) -> list[ICTEvent]
     trend = 0  # 1 up, -1 down, 0 neutral
     events: list[ICTEvent] = []
 
+    # Within one kind, swings confirm in timestamp order (fixed lookback) and the
+    # prunes below preserve order, so each active list stays timestamp-sorted and
+    # the most recent swing is simply the last element.
     for c in candles:
         # admit swings that are now confirmed (no lookahead).
         while si < len(sw) and sw[si].confirm_ts <= c.timestamp:
             (active_highs if sw[si].kind == "high" else active_lows).append(sw[si])
             si += 1
 
-        ref_high = max((s for s in active_highs), key=lambda s: s.timestamp, default=None)
+        ref_high = active_highs[-1] if active_highs else None
         if ref_high is not None and c.close > ref_high.price:
             kind = "mss" if trend == -1 else "bos"
             events.append(ICTEvent(
@@ -87,7 +90,7 @@ def structure_breaks(candles: list[Candle], lookback: int = 2) -> list[ICTEvent]
             active_highs = [s for s in active_highs if s.price > c.close]
             continue
 
-        ref_low = max((s for s in active_lows), key=lambda s: s.timestamp, default=None)
+        ref_low = active_lows[-1] if active_lows else None
         if ref_low is not None and c.close < ref_low.price:
             kind = "mss" if trend == 1 else "bos"
             events.append(ICTEvent(

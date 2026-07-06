@@ -50,8 +50,26 @@ export function BacktestResults() {
           Clear
         </button>
       </div>
-      <div className="text-[10px] text-slate-500">
-        {result.strategy} · {result.symbol.toUpperCase()} {result.timeframe}
+      <div className="flex items-center gap-1 text-[10px] text-slate-500">
+        <span>
+          {result.strategy} · {result.symbol.toUpperCase()} {result.timeframe}
+        </span>
+        {result.settlement && (
+          <span
+            title={
+              result.settlement === 'm1'
+                ? 'SL/TP resolved intra-bar by walking M1 candles'
+                : 'No M1 data — SL and TP inside one bar settle pessimistically (SL first)'
+            }
+            className={`rounded px-1 text-[9px] uppercase ${
+              result.settlement === 'm1'
+                ? 'bg-emerald-900/50 text-emerald-400'
+                : 'bg-amber-900/50 text-amber-400'
+            }`}
+          >
+            {result.settlement === 'm1' ? 'M1 fills' : 'bar fills'}
+          </span>
+        )}
       </div>
 
       <div className="mt-1 grid grid-cols-3 gap-1 text-[11px]">
