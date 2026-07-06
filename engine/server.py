@@ -75,11 +75,16 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-# contract size per asset (units per 1.0 lot) — mirrors symbols.ts.
-INDEX_SYMBOLS = {"us30", "nas100", "us500", "ger40"}
+# contract size per asset (units per 1.0 lot) — mirrors web/src/lib/symbols.ts.
+# Adding a symbol there REQUIRES updating this mirror or engine P&L is wrong
+# (ftse100/xauusd were missed in the 11-symbol expansion — hence the test).
+INDEX_SYMBOLS = {"us30", "nas100", "us500", "ger40", "ftse100"}
+CONTRACT_SIZES = {"xauusd": 100.0}
 
 
 def _contract_size(symbol: str) -> float:
+    if symbol in CONTRACT_SIZES:
+        return CONTRACT_SIZES[symbol]
     return 1.0 if symbol in INDEX_SYMBOLS else 100000.0
 
 
