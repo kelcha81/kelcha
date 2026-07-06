@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { settleBars } from '@/lib/fills';
+import { settleBars, classifyEntry } from '@/lib/fills';
 import type { Candle } from '@/store/replayStore';
 import type { Position, PendingOrder } from '@/store/tradingStore';
 
@@ -116,5 +116,61 @@ describe('settleBars', () => {
     expect(r.closures).toHaveLength(0);
     expect(r.positions).toHaveLength(1);
     expect(r.pending).toHaveLength(1);
+  });
+});
+
+describe('settleBars — stop entry orders (C4)', () => {
+  it('buy-stop fills only when price rises through the trigger, at the trigger', () => {
+    const o = limit({ side: 'long', kind: 'stop', entryPrice: 1.11 });
+    // bar stays below the trigger → no fill
+    const none = settleBars([], [o], [bar(0, 1.1, 1.109, 1.095, 1.1)], makeId);
+    expect(none.fills).toHaveLength(0);
+    expect(none.pending).toHaveLength(1);
+    // bar rises through 1.11 → fills at 1.11
+    const hit = settleBars([], [o], [bar(0, 1.1, 1.12, 1.099, 1.115)], makeId);
+    expect(hit.fills).toHaveLength(1);
+    expect(hit.positions[0].entryPrice).toBeCloseTo(1.11);
+  });
+
+  it('buy-stop gapping above the trigger fills at the bar open (slippage)', () => {
+    const o = limit({ side: 'long', kind: 'stop', entryPrice: 1.11 });
+    const r = settleBars([], [o], [bar(0, 1.13, 1.14, 1.125, 1.135)], makeId);
+    expect(r.fills).toHaveLength(1);
+    expect(r.positions[0].entryPrice).toBeCloseTo(1.13); // open, worse than trigger
+  });
+
+  it('sell-stop fills when price falls through the trigger, at the trigger', () => {
+    const o = limit({ side: 'short', kind: 'stop', entryPrice: 1.09 });
+    const none = settleBars([], [o], [bar(0, 1.1, 1.105, 1.091, 1.1)], makeId);
+    expect(none.fills).toHaveLength(0);
+    const hit = settleBars([], [o], [bar(0, 1.1, 1.101, 1.085, 1.088)], makeId);
+    expect(hit.fills).toHaveLength(1);
+    expect(hit.positions[0].side).toBe('short');
+    expect(hit.positions[0].entryPrice).toBeCloseTo(1.09);
+  });
+
+  it('a limit at the same price would NOT fill on a break-through bar (kind matters)', () => {
+    // Price gaps up and never trades back to 1.11 within the bar's low..high?
+    // A buy LIMIT at 1.11 fills whenever 1.11 is inside [low,high]; use a bar
+    // whose whole range is above 1.11 so only a stop triggers.
+    const stop = limit({ side: 'long', kind: 'stop', entryPrice: 1.11 });
+    const lim = limit({ side: 'long', kind: 'limit', entryPrice: 1.11 });
+    const b = [bar(0, 1.12, 1.13, 1.115, 1.125)]; // entire range above 1.11
+    expect(settleBars([], [stop], b, makeId).fills).toHaveLength(1);
+    expect(settleBars([], [lim], b, makeId).fills).toHaveLength(0);
+  });
+});
+
+describe('classifyEntry (C3 order projection)', () => {
+  it('classifies buy/sell entries by side of the live price', () => {
+    // buy below price = limit, buy above = stop
+    expect(classifyEntry('long', 1.09, 1.1)).toBe('limit');
+    expect(classifyEntry('long', 1.11, 1.1)).toBe('stop');
+    // sell above price = limit, sell below = stop
+    expect(classifyEntry('short', 1.11, 1.1)).toBe('limit');
+    expect(classifyEntry('short', 1.09, 1.1)).toBe('stop');
+    // at price → limit (fills immediately on a touch)
+    expect(classifyEntry('long', 1.1, 1.1)).toBe('limit');
+    expect(classifyEntry('short', 1.1, 1.1)).toBe('limit');
   });
 });

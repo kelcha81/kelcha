@@ -15,6 +15,7 @@ import {
   type Trade
 } from '@/store/tradingStore';
 import { useOrderToolStore, type OrderField } from '@/store/orderToolStore';
+import { classifyEntry } from '@/lib/fills';
 import { exportTradesCSV, exportTradesJSON } from '@/lib/exportTrades';
 import { getSymbolInfo } from '@/lib/symbols';
 import { PerformanceReport } from '@/components/PerformanceReport';
@@ -108,6 +109,9 @@ export function TradingPanel() {
   const setValue = useOrderToolStore((s) => s.setValue);
   const clearField = useOrderToolStore((s) => s.clearField);
   const resetOrder = useOrderToolStore((s) => s.reset);
+  const projecting = useOrderToolStore((s) => s.projecting);
+  const orderSide = useOrderToolStore((s) => s.side);
+  const cancelOrder = useOrderToolStore((s) => s.cancel);
 
   const size = useOrderToolStore((s) => s.lots);
   const setLots = useOrderToolStore((s) => s.setLots);
@@ -146,11 +150,17 @@ export function TradingPanel() {
     }
   };
 
+  // Classify a set entry vs the live price: buy-below / sell-above = limit,
+  // the other side = stop. No entry = market. Drives the button label + fill kind.
+  const orderType: 'market' | 'limit' | 'stop' =
+    entry == null ? 'market' : price != null ? classifyEntry(orderSide, entry, price) : 'limit';
+
   const placeOrder = (side: 'long' | 'short') => {
     if (size <= 0) return;
     const common = { side, size, contractSize, sl: sl ?? undefined, tp: tp ?? undefined };
     if (entry != null) {
-      placePending(activeTabId, { ...common, entryPrice: entry, createdTime: head });
+      const kind = price != null ? classifyEntry(side, entry, price) : 'limit';
+      placePending(activeTabId, { ...common, entryPrice: entry, createdTime: head, kind });
     } else if (price != null) {
       openPos(activeTabId, { ...common, entryPrice: price, entryTime: head });
     }
@@ -271,6 +281,31 @@ export function TradingPanel() {
         <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
           TP {levelInput('tp', tp)}
         </div>
+        {projecting && (
+          <div className="rounded border border-blue-800 bg-blue-950/40 p-2">
+            <div className="mb-1 flex items-center justify-between text-xs">
+              <span className="font-semibold text-blue-300">Order projection</span>
+              <span className="uppercase text-slate-400">{orderType}</span>
+            </div>
+            <div className="mb-2 text-[11px] text-slate-400">Drag the box on the chart to adjust entry / SL / TP, then place.</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => placeOrder(orderSide)}
+                className={`flex-1 rounded py-1.5 text-sm font-medium text-white ${orderSide === 'long' ? 'bg-green-600 hover:bg-green-500' : 'bg-red-600 hover:bg-red-500'}`}
+              >
+                Place {orderSide === 'long' ? 'Buy' : 'Sell'} {orderType}
+              </button>
+              <button
+                type="button"
+                onClick={() => cancelOrder()}
+                className="rounded border border-slate-700 bg-slate-800 px-3 text-sm text-slate-300 hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex gap-2">
           <button
             type="button"
@@ -278,7 +313,7 @@ export function TradingPanel() {
             onClick={() => placeOrder('long')}
             className="flex-1 rounded bg-green-600 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-40"
           >
-            Buy {entry != null ? 'Limit' : ''}
+            Buy {entry != null ? orderType : ''}
           </button>
           <button
             type="button"
@@ -286,7 +321,7 @@ export function TradingPanel() {
             onClick={() => placeOrder('short')}
             className="flex-1 rounded bg-red-600 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
           >
-            Sell {entry != null ? 'Limit' : ''}
+            Sell {entry != null ? orderType : ''}
           </button>
         </div>
       </div>

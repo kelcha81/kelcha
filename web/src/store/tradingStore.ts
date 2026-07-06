@@ -24,6 +24,10 @@ export interface PendingOrder {
   sl?: number;
   tp?: number;
   createdTime: number;
+  /** How the entry triggers: 'limit' fills on a touch-back to the price;
+   *  'stop' fills when price trades THROUGH it in the order's direction.
+   *  Absent = 'limit' (back-compat with orders placed before C4). */
+  kind?: 'limit' | 'stop';
 }
 
 export interface Trade {
