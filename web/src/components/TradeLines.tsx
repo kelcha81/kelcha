@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { OverlayEvent } from 'klinecharts';
 import { useActiveChart } from '@/store/chartStore';
 import { useWorkspaceStore, useActiveTab } from '@/store/workspaceStore';
+import { useReplayStore } from '@/store/replayStore';
 import { useTradingStore, type Side } from '@/store/tradingStore';
 import { useOrderToolStore } from '@/store/orderToolStore';
 import { getSymbolInfo } from '@/lib/symbols';
@@ -76,17 +77,29 @@ export function TradeLines() {
   const chart = useActiveChart();
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const { symbol } = useActiveTab();
-  const prec = getSymbolInfo(symbol).pricePrecision;
+  const info = getSymbolInfo(symbol);
+  const prec = info.pricePrecision;
+  const contractSize = info.contractSize;
   const positions = useTradingStore((s) => s.positions[activeTabId]);
   const pending = useTradingStore((s) => s.pending[activeTabId]);
   const entry = useOrderToolStore((s) => s.entry);
   const sl = useOrderToolStore((s) => s.sl);
   const tp = useOrderToolStore((s) => s.tp);
+  const projecting = useOrderToolStore((s) => s.projecting);
+  const composerSide = useOrderToolStore((s) => s.side);
+  const lots = useOrderToolStore((s) => s.lots);
+  const head = useReplayStore((s) => s.currentTimestamp);
 
   const boxesRef = useRef<Map<string, string>>(new Map()); // trackKey → overlayId
+  const projectionRef = useRef<string | null>(null); // the composed-order projection overlay
   const tagsRef = useRef<string[]>([]);
   const draggingRef = useRef<string | null>(null); // overlayId being dragged
   const chartRef = useRef(chart);
+
+  // A composed order / projection shouldn't carry across tab switches.
+  useEffect(() => {
+    queueMicrotask(() => useOrderToolStore.getState().cancel());
+  }, [activeTabId]);
 
   useEffect(() => {
     registerPriceTag();
@@ -154,6 +167,17 @@ export function TradeLines() {
     return false;
   };
 
+  // Dragging the projection edits the composer (bidirectional with the ticket).
+  const onProjectionMoveEnd = (e: OverlayEvent) => {
+    const pts = e.overlay.points;
+    const store = useOrderToolStore.getState();
+    if (pts[0]?.value != null) store.setValue('entry', pts[0].value);
+    if (pts[1]?.value != null) store.setValue('sl', pts[1].value);
+    if (pts[2]?.value != null) store.setValue('tp', pts[2].value);
+    draggingRef.current = null;
+    return false;
+  };
+
   useEffect(() => {
     if (!chart) return;
     // Active chart changed → the old chart's overlays went with it; start clean.
@@ -212,19 +236,52 @@ export function TradeLines() {
       }
     }
 
-    // Order being composed → transient axis tags (cheap; rebuilt each change).
+    // Order projection (composing via the position tool): one draggable box that
+    // replaces the plain axis tags. Editing it feeds the composer and vice-versa.
+    if (projecting && entry != null && head != null) {
+      const points = [
+        { timestamp: head, value: entry },
+        { timestamp: head, value: sl ?? entry },
+        { timestamp: head, value: tp ?? entry }
+      ];
+      const extendData = {
+        id: '__projection__',
+        kind: 'pending',
+        side: composerSide,
+        qty: lots * contractSize,
+        prec,
+        entry,
+        sl: sl ?? undefined,
+        tp: tp ?? undefined,
+        pending: true,
+        label: 'new'
+      };
+      if (projectionRef.current) {
+        if (projectionRef.current !== draggingRef.current) chart.overrideOverlay({ id: projectionRef.current, points, extendData });
+      } else {
+        const id = chart.createOverlay({ name: LIVE_POSITION, lock: false, points, extendData, onPressedMoveStart, onPressedMoveEnd: onProjectionMoveEnd });
+        if (typeof id === 'string') projectionRef.current = id;
+      }
+    } else if (projectionRef.current) {
+      chart.removeOverlay(projectionRef.current);
+      projectionRef.current = null;
+    }
+
+    // When NOT projecting, show plain axis tags for any picked levels.
     for (const t of tagsRef.current) chart.removeOverlay(t);
     tagsRef.current = [];
-    const tags: { value: number; color: string }[] = [];
-    if (entry != null) tags.push({ value: entry, color: ENTRY });
-    if (sl != null) tags.push({ value: sl, color: STOP });
-    if (tp != null) tags.push({ value: tp, color: TARGET });
-    for (const t of tags) {
-      const id = chart.createOverlay({ name: PRICE_TAG, lock: true, points: [{ value: t.value }], extendData: { color: t.color, prec } });
-      if (typeof id === 'string') tagsRef.current.push(id);
+    if (!projecting) {
+      const tags: { value: number; color: string }[] = [];
+      if (entry != null) tags.push({ value: entry, color: ENTRY });
+      if (sl != null) tags.push({ value: sl, color: STOP });
+      if (tp != null) tags.push({ value: tp, color: TARGET });
+      for (const t of tags) {
+        const id = chart.createOverlay({ name: PRICE_TAG, lock: true, points: [{ value: t.value }], extendData: { color: t.color, prec } });
+        if (typeof id === 'string') tagsRef.current.push(id);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chart, positions, pending, entry, sl, tp, prec]);
+  }, [chart, positions, pending, entry, sl, tp, prec, contractSize, projecting, composerSide, lots, head]);
 
   return null;
 }

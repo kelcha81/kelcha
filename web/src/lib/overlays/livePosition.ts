@@ -14,6 +14,7 @@ interface Ext {
   prec?: number;
   side?: string;
   pending?: boolean;
+  label?: string; // overrides the "(pending)" tag (e.g. "new" for a projection)
 }
 
 function figures({ overlay, coordinates, bounding }: OverlayCreateFiguresCallbackParams): OverlayFigure[] {
@@ -62,7 +63,8 @@ function figures({ overlay, coordinates, bounding }: OverlayCreateFiguresCallbac
   if (hasSl) line(s.y, '#dc2626');
   if (hasTp) line(t.y, '#16a34a');
 
-  pill(e.y, `${side} ${qty}${ext.pending ? ' (pending)' : ''}  R/R ${rr}`, entryColor, 'middle');
+  const tag = ext.label ? ` (${ext.label})` : ext.pending ? ' (pending)' : '';
+  pill(e.y, `${side} ${qty}${tag}  R/R ${rr}`, entryColor, 'middle');
   if (hasTp) pill(t.y, `TP ${target.toFixed(prec)}  ${(rewardDist * pip).toFixed(1)}  +${(rewardDist * qty).toFixed(2)}`, '#16a34a', 'bottom');
   if (hasSl) pill(s.y, `SL ${stop.toFixed(prec)}  ${(riskDist * pip).toFixed(1)}  -${(riskDist * qty).toFixed(2)}`, '#dc2626', 'top');
 

@@ -68,6 +68,23 @@ export function DrawingToolbar() {
     setOpenGroup(null);
     const mode = magnetToMode(useToolbarStore.getState().magnet);
 
+    if (t.onComplete) {
+      // One-shot tool (trading order): draw, capture points, remove, hand off.
+      drawingId.current = chart.createOverlay({
+        name: t.overlay,
+        mode,
+        onDrawEnd: (e) => {
+          const pts = e.overlay.points.map((p) => ({ value: p.value }));
+          chart.removeOverlay({ id: e.overlay.id });
+          drawingId.current = null;
+          t.onComplete?.(pts);
+          setTimeout(() => setActiveTool(null), 0);
+          return false;
+        }
+      }) as string | null;
+      return;
+    }
+
     if (t.ephemeral) {
       // Measure & co.: never persisted; dismissed on deselect (click elsewhere).
       drawingId.current = chart.createOverlay({

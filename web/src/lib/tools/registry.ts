@@ -46,6 +46,7 @@ import { registerRanges, DATE_RANGE, PRICE_RANGE, DATE_PRICE_RANGE } from '@/lib
 import { registerLines2, TREND_ANGLE_TOOL, INFO_LINE_TOOL, PITCHFORK_TOOL } from '@/lib/overlays/lines2';
 import { registerMarkers, FLAG_TOOL, ARROW_UP_TOOL, ARROW_DOWN_TOOL } from '@/lib/overlays/markers';
 import { registerCurves, PATH2, PATH3, PATH4, CURVE } from '@/lib/overlays/curves';
+import { useOrderToolStore } from '@/store/orderToolStore';
 
 // Declarative drawing-tool registry: the DrawingToolbar renders whatever is
 // here — adding a tool = one entry (+ overlay registration if custom).
@@ -63,6 +64,9 @@ export interface ToolDef {
   Icon: LucideIcon;
   shortcut?: string; // hotkeys.ts combo
   ephemeral?: boolean;
+  /** When set, the tool is a one-shot: it's drawn, removed, and its points are
+   *  handed here (used by the trading tool to open an order projection). */
+  onComplete?: (points: Array<{ value?: number }>) => void;
 }
 
 export const TOOLS: ToolDef[] = [
@@ -100,9 +104,30 @@ export const TOOLS: ToolDef[] = [
   { id: 'flag', label: 'Flag mark', group: 'Annotations', overlay: FLAG_TOOL, Icon: Flag },
   { id: 'arrowUp', label: 'Arrow mark up', group: 'Annotations', overlay: ARROW_UP_TOOL, Icon: ArrowUp },
   { id: 'arrowDown', label: 'Arrow mark down', group: 'Annotations', overlay: ARROW_DOWN_TOOL, Icon: ArrowDown },
-  // Position: THE long/short R:R tool — a persisted drawing; right-click →
-  // "Apply to order ticket" loads its levels into the trading panel.
-  { id: 'position', label: 'Long/Short position', group: 'Position', overlay: POSITION_DRAWING, Icon: Target },
+  // Position group:
+  // - "Long/Short position" is the TRADING tool — drawing entry/stop/target
+  //   opens a live order projection in the composer (confirm in the panel to
+  //   place a real paper trade). One-shot: the draw is removed on completion.
+  // - "R:R zone" is the persisted markup drawing (used for Forecast planning);
+  //   right-click → "Apply to order ticket" still loads its levels.
+  {
+    id: 'order',
+    label: 'Long/Short position',
+    group: 'Position',
+    overlay: POSITION_DRAWING,
+    Icon: TrendingUp,
+    onComplete: (pts) => {
+      const [e, s, t] = pts;
+      if (e?.value == null) return;
+      const entry = e.value;
+      const stop = s?.value ?? null;
+      const target = t?.value ?? null;
+      // Side from where the stop sits relative to entry (fallback: target).
+      const side = stop != null ? (stop < entry ? 'long' : 'short') : target != null && target > entry ? 'long' : 'short';
+      useOrderToolStore.getState().beginProjection({ entry, sl: stop, tp: target, side });
+    }
+  },
+  { id: 'position', label: 'R:R zone (markup)', group: 'Position', overlay: POSITION_DRAWING, Icon: Target },
   // Measure — ephemeral Shift+M + persisted range measurers
   { id: 'measure', label: 'Measure', group: 'Measure', overlay: MEASURE, Icon: PencilRuler, shortcut: 'shift+m', ephemeral: true },
   { id: 'dateRange', label: 'Date range', group: 'Measure', overlay: DATE_RANGE, Icon: MoveHorizontal },

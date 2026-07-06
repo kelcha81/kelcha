@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { settleBars } from '@/lib/fills';
+import { settleBars, classifyEntry } from '@/lib/fills';
 import type { Candle } from '@/store/replayStore';
 import type { Position, PendingOrder } from '@/store/tradingStore';
 
@@ -158,5 +158,19 @@ describe('settleBars — stop entry orders (C4)', () => {
     const b = [bar(0, 1.12, 1.13, 1.115, 1.125)]; // entire range above 1.11
     expect(settleBars([], [stop], b, makeId).fills).toHaveLength(1);
     expect(settleBars([], [lim], b, makeId).fills).toHaveLength(0);
+  });
+});
+
+describe('classifyEntry (C3 order projection)', () => {
+  it('classifies buy/sell entries by side of the live price', () => {
+    // buy below price = limit, buy above = stop
+    expect(classifyEntry('long', 1.09, 1.1)).toBe('limit');
+    expect(classifyEntry('long', 1.11, 1.1)).toBe('stop');
+    // sell above price = limit, sell below = stop
+    expect(classifyEntry('short', 1.11, 1.1)).toBe('limit');
+    expect(classifyEntry('short', 1.09, 1.1)).toBe('stop');
+    // at price → limit (fills immediately on a touch)
+    expect(classifyEntry('long', 1.1, 1.1)).toBe('limit');
+    expect(classifyEntry('short', 1.1, 1.1)).toBe('limit');
   });
 });

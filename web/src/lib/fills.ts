@@ -1,5 +1,15 @@
 import type { Candle } from '@/store/replayStore';
-import type { Position, PendingOrder } from '@/store/tradingStore';
+import type { Position, PendingOrder, Side } from '@/store/tradingStore';
+
+/**
+ * Classify a pending entry from where it sits relative to the live price
+ * (TradingView-style): a buy below price / sell above price is a LIMIT; a buy
+ * above / sell below is a STOP. Callers treat a null entry as a market order.
+ */
+export function classifyEntry(side: Side, entry: number, price: number): 'limit' | 'stop' {
+  if (side === 'long') return entry <= price ? 'limit' : 'stop';
+  return entry >= price ? 'limit' : 'stop';
+}
 
 // Pure paper-trading settlement engine. Walks EVERY m1 bar between the previous
 // replay head and the new one (exclusive, inclusive], so limit fills and SL/TP
