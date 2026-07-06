@@ -75,17 +75,22 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-# contract size per asset (units per 1.0 lot) — mirrors web/src/lib/symbols.ts.
-# Adding a symbol there REQUIRES updating this mirror or engine P&L is wrong
-# (ftse100/xauusd were missed in the 11-symbol expansion — hence the test).
-INDEX_SYMBOLS = {"us30", "nas100", "us500", "ger40", "ftse100"}
-CONTRACT_SIZES = {"xauusd": 100.0}
+# Per-symbol specs (contract size etc.) arrive in each packaged manifest's
+# `instrument` block, stamped by the data pipeline from instruments.json — the
+# single registry. The legacy maps below only cover manifests packaged before
+# the registry existed; they are frozen (do NOT extend them for new symbols).
+LEGACY_INDEX_SYMBOLS = {"us30", "nas100", "us500", "ger40", "ftse100"}
+LEGACY_CONTRACT_SIZES = {"xauusd": 100.0}
 
 
-def _contract_size(symbol: str) -> float:
-    if symbol in CONTRACT_SIZES:
-        return CONTRACT_SIZES[symbol]
-    return 1.0 if symbol in INDEX_SYMBOLS else 100000.0
+def _contract_size(symbol: str, manifest: dict | None = None) -> float:
+    spec = (manifest or {}).get("instrument") or {}
+    size = spec.get("contractSize")
+    if size:
+        return float(size)
+    if symbol in LEGACY_CONTRACT_SIZES:
+        return LEGACY_CONTRACT_SIZES[symbol]
+    return 1.0 if symbol in LEGACY_INDEX_SYMBOLS else 100000.0
 
 
 def run(req: dict) -> dict:
@@ -96,7 +101,7 @@ def run(req: dict) -> dict:
 
     manifest = load_manifest(symbol)
     price_precision = int(manifest.get("pricePrecision", 5))
-    contract_size = _contract_size(symbol)
+    contract_size = _contract_size(symbol, manifest)
 
     frm, to = req.get("from"), req.get("to")
     base, base_key = load_series_cached(symbol, timeframe, from_ts=frm, to_ts=to)
@@ -201,11 +206,12 @@ def run_optimize(req: dict) -> dict:
     name = req["strategy"]
     symbol = req["symbol"]
     timeframe = req.get("timeframe", "h1")
-    prec = int(load_manifest(symbol).get("pricePrecision", 5))
+    manifest = load_manifest(symbol)
+    prec = int(manifest.get("pricePrecision", 5))
     res = optimize.search(
         name, symbol, timeframe=timeframe, n_trials=int(req.get("trials", 30)),
         metric=req.get("metric", "avgR"), min_trades=int(req.get("min_trades", 5)),
-        price_precision=prec, contract_size=_contract_size(symbol),
+        price_precision=prec, contract_size=_contract_size(symbol, manifest),
         warmup=int(req.get("warmup", 50)), from_ts=req.get("from"), to_ts=req.get("to"),
     )
     log.info("optimize %s %s -> %s=%.4f (%d trials, %s)",

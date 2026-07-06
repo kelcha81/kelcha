@@ -11,6 +11,8 @@ import { Modal } from '@/components/ui/dialog';
 interface Status {
   packaged: boolean;
   seeded: boolean;
+  /** Packaged manifest's specs match the registry (false = republish needed). */
+  specsCurrent?: boolean;
 }
 
 /** Consume the package SSE stream, calling back on stage/log; rejects on error. */
@@ -69,7 +71,7 @@ export function DataManager({ onClose }: { onClose: () => void }) {
   const [toDate, setToDate] = useState('2025-12-31');
 
   const refresh = async () => {
-    let packaged: Record<string, { packaged: boolean }> = {};
+    let packaged: Record<string, { packaged: boolean; specsCurrent?: boolean }> = {};
     try {
       packaged = (await (await fetch('/api/symbols')).json()).symbols ?? {};
     } catch {
@@ -77,14 +79,19 @@ export function DataManager({ onClose }: { onClose: () => void }) {
     }
     const next: Record<string, Status> = {};
     for (const s of SYMBOL_LIST) {
-      next[s.symbol] = { packaged: packaged[s.symbol]?.packaged ?? false, seeded: await hasSymbol(s.symbol) };
+      next[s.symbol] = {
+        packaged: packaged[s.symbol]?.packaged ?? false,
+        specsCurrent: packaged[s.symbol]?.specsCurrent,
+        seeded: await hasSymbol(s.symbol)
+      };
     }
     setStatuses(next);
   };
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // post-effect tick: keeps setState out of the synchronous effect body
+    void Promise.resolve().then(refresh);
+     
   }, []);
 
   const wrap = async (sym: string, fn: () => Promise<void>) => {
@@ -128,6 +135,15 @@ export function DataManager({ onClose }: { onClose: () => void }) {
   const busy = runningSym !== null;
 
   const badge = (st: Status | undefined) => {
+    if (st?.packaged && st.specsCurrent === false)
+      return (
+        <span
+          title="The packaged data carries different specs (precision/contract size) than the registry — re-download, or the nightly refresh will fix it"
+          className="rounded bg-amber-900/50 px-1.5 py-0.5 text-[10px] text-amber-300"
+        >
+          Specs stale
+        </span>
+      );
     if (st?.seeded) return <span className="rounded bg-emerald-900/50 px-1.5 py-0.5 text-[10px] text-emerald-300">Cached</span>;
     if (st?.packaged) return <span className="rounded bg-blue-900/50 px-1.5 py-0.5 text-[10px] text-blue-300">Ready</span>;
     return <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">Not packaged</span>;
@@ -147,7 +163,9 @@ export function DataManager({ onClose }: { onClose: () => void }) {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <p className="mb-2 text-[11px] text-slate-500">
             Download &amp; package candle data (Dukascopy) into the app and engine. A shorter range
-            downloads faster.
+            downloads faster. Instruments are defined once in{' '}
+            <code className="text-slate-400">data-pipeline/instruments.json</code> — the web app,
+            the engine and the nightly refresh all read that registry.
           </p>
 
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
@@ -177,21 +195,26 @@ export function DataManager({ onClose }: { onClose: () => void }) {
                 <div key={s.symbol} className="flex items-center gap-2 px-3 py-2">
                   <div className="flex-1">
                     <div className="text-sm">{s.label}</div>
-                    <div className="text-[10px] uppercase text-slate-500">{s.assetClass}</div>
+                    <div className="text-[10px] text-slate-500">
+                      <span className="uppercase">{s.assetClass}</span>
+                      <span className="ml-2 font-mono">
+                        {s.instrumentCode} · {s.pricePrecision}dp · lot {s.contractSize.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                   {badge(st)}
                   {isRunning ? (
                     <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
                   ) : (
                     <div className="flex gap-1">
-                      {!st?.packaged && (
+                      {(!st?.packaged || st.specsCurrent === false) && (
                         <button
                           type="button"
                           onClick={() => downloadAndPackage(s)}
                           disabled={busy}
                           className="flex items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-500 disabled:opacity-40"
                         >
-                          <Download className="h-3 w-3" /> Download
+                          <Download className="h-3 w-3" /> {st?.packaged ? 'Repackage' : 'Download'}
                         </button>
                       )}
                       {st?.packaged && (

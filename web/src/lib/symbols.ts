@@ -1,3 +1,5 @@
+import instruments from '../../data-pipeline/instruments.json';
+
 export type AssetClass = 'forex' | 'index' | 'commodity';
 
 export interface SymbolInfo {
@@ -17,24 +19,15 @@ export interface SymbolInfo {
 }
 
 /**
- * The instruments the app knows about. The registry is the single source of
- * truth for precision/labels/codes + contract specs (used by the P&L model).
+ * The instruments the app knows about — loaded from
+ * `data-pipeline/instruments.json`, the SINGLE source of truth shared with the
+ * refresh Job and the packager (which stamps each entry into its symbol's
+ * manifest.json so the engine prices trades with the same specs). To add a
+ * symbol, add one entry THERE — never re-declare specs in code.
  */
-export const SYMBOLS: Record<string, SymbolInfo> = {
-  eurusd: { symbol: 'eurusd', label: 'EUR/USD', instrumentCode: 'eurusd', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
-  gbpusd: { symbol: 'gbpusd', label: 'GBP/USD', instrumentCode: 'gbpusd', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
-  usdchf: { symbol: 'usdchf', label: 'USD/CHF', instrumentCode: 'usdchf', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
-  eurgbp: { symbol: 'eurgbp', label: 'EUR/GBP', instrumentCode: 'eurgbp', pricePrecision: 5, assetClass: 'forex', available: true, contractSize: 100000 },
-  gbpjpy: { symbol: 'gbpjpy', label: 'GBP/JPY', instrumentCode: 'gbpjpy', pricePrecision: 3, assetClass: 'forex', available: true, contractSize: 100000 },
-
-  us30: { symbol: 'us30', label: 'US30 (Dow)', instrumentCode: 'usa30idxusd', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
-  nas100: { symbol: 'nas100', label: 'NAS100', instrumentCode: 'usatechidxusd', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
-  us500: { symbol: 'us500', label: 'S&P 500', instrumentCode: 'usa500idxusd', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
-  ger40: { symbol: 'ger40', label: 'GER40 (DAX)', instrumentCode: 'deuidxeur', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
-  ftse100: { symbol: 'ftse100', label: 'FTSE 100', instrumentCode: 'gbridxgbp', pricePrecision: 1, assetClass: 'index', available: true, contractSize: 1 },
-
-  xauusd: { symbol: 'xauusd', label: 'Gold (XAU/USD)', instrumentCode: 'xauusd', pricePrecision: 2, assetClass: 'commodity', available: true, contractSize: 100 }
-};
+export const SYMBOLS: Record<string, SymbolInfo> = Object.fromEntries(
+  instruments.map((s) => [s.symbol, { ...s, assetClass: s.assetClass as AssetClass }])
+);
 
 export const SYMBOL_LIST: SymbolInfo[] = Object.values(SYMBOLS);
 export const AVAILABLE_SYMBOLS: SymbolInfo[] = SYMBOL_LIST.filter((s) => s.available);

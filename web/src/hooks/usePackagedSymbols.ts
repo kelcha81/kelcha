@@ -34,8 +34,9 @@ export function usePackagedSymbols(): {
   };
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // post-effect tick: keeps setState out of the synchronous effect body
+    void Promise.resolve().then(refresh);
+     
   }, []);
 
   return { statuses, ready, refresh };

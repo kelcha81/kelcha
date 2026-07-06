@@ -66,16 +66,23 @@ export function ForecastModal({
   const pendingTf = useRef<string | null>(null);
 
   // Read the matching Forecast template so the form reflects the user's fields.
+  // setTemplate is deferred a tick so the effect body never sets state
+  // synchronously (react-hooks/set-state-in-effect).
   useEffect(() => {
-    if (toNotion || !vault.connected) {
-      setTemplate(null); // Notion + disconnected vault both use the built-in template
-      return;
-    }
     let cancelled = false;
-    setTemplate(undefined);
-    readTemplate(cfg.templatesFolder, TEMPLATE_FILE[horizon])
-      .then((t) => !cancelled && setTemplate(t))
-      .catch(() => !cancelled && setTemplate(null));
+    if (toNotion || !vault.connected) {
+      // Notion + disconnected vault both use the built-in template
+      queueMicrotask(() => {
+        if (!cancelled) setTemplate(null);
+      });
+    } else {
+      queueMicrotask(() => {
+        if (!cancelled) setTemplate(undefined);
+      });
+      readTemplate(cfg.templatesFolder, TEMPLATE_FILE[horizon])
+        .then((t) => !cancelled && setTemplate(t))
+        .catch(() => !cancelled && setTemplate(null));
+    }
     return () => {
       cancelled = true;
     };

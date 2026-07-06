@@ -20,23 +20,25 @@ export function DashboardLoader({ children }: { children: ReactNode }) {
   const { symbol } = useActiveTab();
   const setSession = useReplayStore((s) => s.setSession);
 
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [stalled, setStalled] = useState(false);
+  // Load state is keyed by tab id: switching tabs makes the previous state
+  // stale by derivation, so the effect never needs synchronous resets.
+  const [load, setLoad] = useState<{ tabId: string; ready: boolean; error: string | null } | null>(null);
+  const [stalledFor, setStalledFor] = useState<string | null>(null);
+
+  const forTab = load && load.tabId === activeTabId ? load : null;
+  const ready = !!forTab?.ready;
+  const error = forTab?.error ?? null;
+  const stalled = stalledFor === activeTabId && !ready;
 
   // Watchdog: surface a hint if loading stalls (network or a locked IndexedDB).
   useEffect(() => {
     if (ready) return;
-    const id = setTimeout(() => setStalled(true), 8000);
+    const id = setTimeout(() => setStalledFor(activeTabId), 8000);
     return () => clearTimeout(id);
   }, [ready, activeTabId]);
 
   useEffect(() => {
     let cancelled = false;
-    setReady(false);
-    setError(null);
-    setStalled(false);
-
     const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === activeTabId);
     if (!tab) return;
 
@@ -63,9 +65,10 @@ export function DashboardLoader({ children }: { children: ReactNode }) {
         end: tab.end,
         startTs
       });
-      setReady(true);
+      setLoad({ tabId: activeTabId, ready: true, error: null });
     })().catch((e: unknown) => {
-      if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      if (!cancelled)
+        setLoad({ tabId: activeTabId, ready: false, error: e instanceof Error ? e.message : String(e) });
     });
 
     return () => {
