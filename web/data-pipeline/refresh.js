@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { uploadSymbol } from './upload.js';
 
@@ -18,20 +19,12 @@ import { uploadSymbol } from './upload.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// Mirror of web/src/lib/symbols.ts (symbol → dukascopy instrument + precision).
-const SYMBOLS = [
-  { symbol: 'eurusd', instrument: 'eurusd', precision: 5 },
-  { symbol: 'gbpusd', instrument: 'gbpusd', precision: 5 },
-  { symbol: 'usdchf', instrument: 'usdchf', precision: 5 },
-  { symbol: 'eurgbp', instrument: 'eurgbp', precision: 5 },
-  { symbol: 'gbpjpy', instrument: 'gbpjpy', precision: 3 },
-  { symbol: 'us30', instrument: 'usa30idxusd', precision: 1 },
-  { symbol: 'nas100', instrument: 'usatechidxusd', precision: 1 },
-  { symbol: 'us500', instrument: 'usa500idxusd', precision: 1 },
-  { symbol: 'ger40', instrument: 'deuidxeur', precision: 1 },
-  { symbol: 'ftse100', instrument: 'gbridxgbp', precision: 1 },
-  { symbol: 'xauusd', instrument: 'xauusd', precision: 2 }
-];
+// Symbol list comes from instruments.json — the single registry shared with the
+// web app (src/lib/symbols.ts imports the same file) and the packager (which
+// stamps each entry into its symbol's manifest for the engine).
+const SYMBOLS = JSON.parse(readFileSync(join(HERE, 'instruments.json'), 'utf8'))
+  .filter((s) => s.available)
+  .map((s) => ({ symbol: s.symbol, instrument: s.instrumentCode, precision: s.pricePrecision }));
 
 const FROM = process.env.REFRESH_FROM || '2022-01-01';
 const TO = new Date().toISOString().slice(0, 10); // today (UTC) → data through yesterday

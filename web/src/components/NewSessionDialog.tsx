@@ -14,16 +14,24 @@ const DATA_START = '2022-01-01';
 const DATA_END = new Date().toISOString().slice(0, 10);
 const tsOf = (date: string) => Date.parse(`${date}T00:00:00Z`);
 
-export function NewSessionDialog({ onClose }: { onClose: () => void }) {
+export function NewSessionDialog({
+  onClose,
+  initialSymbol
+}: {
+  onClose: () => void;
+  /** Preselect this instrument (e.g. from the Ctrl+K palette). */
+  initialSymbol?: string;
+}) {
   const addTab = useWorkspaceStore((s) => s.addTab);
   const { statuses } = usePackagedSymbols();
   const isReady = (sym: string) => !!(statuses[sym]?.packaged || statuses[sym]?.seeded);
 
-  const [assetClass, setAssetClass] = useState<AssetClass>('forex');
+  const initInfo = initialSymbol ? SYMBOL_LIST.find((s) => s.symbol === initialSymbol) : undefined;
+  const [assetClass, setAssetClass] = useState<AssetClass>(initInfo?.assetClass ?? 'forex');
   const symbols = useMemo(() => SYMBOL_LIST.filter((s) => s.assetClass === assetClass), [assetClass]);
 
-  const [symbol, setSymbol] = useState(symbols[0]?.symbol ?? 'eurusd');
-  const [name, setName] = useState(symbols[0]?.label ?? '');
+  const [symbol, setSymbol] = useState(initInfo?.symbol ?? symbols[0]?.symbol ?? 'eurusd');
+  const [name, setName] = useState(initInfo?.label ?? symbols[0]?.label ?? '');
   const [nameEdited, setNameEdited] = useState(false);
   const [start, setStart] = useState(DATA_START);
   const [end, setEnd] = useState(DATA_END);

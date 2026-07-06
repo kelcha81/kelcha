@@ -107,18 +107,28 @@ class TestServerRun(unittest.TestCase):
         self.assertEqual(self._count_fvg_calls(lambda: server.run(req)), 0)
 
 
-class TestContractSizesMirrorSymbolsTs(unittest.TestCase):
-    """server._contract_size must track web/src/lib/symbols.ts — a symbol added
-    there without updating the mirror gets 100k contract size and wildly wrong
-    P&L (this bit ftse100/xauusd in the 11-symbol expansion)."""
+class TestContractSizes(unittest.TestCase):
+    """Contract size comes from the manifest's registry-stamped `instrument`
+    block; the frozen legacy maps only cover manifests packaged before the
+    registry existed (the hand-mirror mispriced ftse100/xauusd once already)."""
 
-    def test_contract_sizes(self):
+    def test_manifest_instrument_block_wins(self):
+        manifest = {"instrument": {"symbol": "newsym", "contractSize": 25}}
+        self.assertEqual(server._contract_size("newsym", manifest), 25.0)
+        # registry beats the legacy maps even for known symbols
+        gold = {"instrument": {"symbol": "xauusd", "contractSize": 100}}
+        self.assertEqual(server._contract_size("xauusd", gold), 100.0)
+
+    def test_legacy_fallback_without_instrument_block(self):
+        for manifest in (None, {}, {"instrument": {}}):
+            self.assertEqual(server._contract_size("eurusd", manifest), 100000.0)  # forex
+            self.assertEqual(server._contract_size("us30", manifest), 1.0)         # index
+            self.assertEqual(server._contract_size("ftse100", manifest), 1.0)      # index
+            self.assertEqual(server._contract_size("xauusd", manifest), 100.0)     # gold
+
+    def test_pip_scale_matches_front_end(self):
         from ict.util import pip_size
-        self.assertEqual(server._contract_size("eurusd"), 100000.0)   # forex
-        self.assertEqual(server._contract_size("us30"), 1.0)          # index
-        self.assertEqual(server._contract_size("ftse100"), 1.0)       # index (added 2026-07)
-        self.assertEqual(server._contract_size("xauusd"), 100.0)      # gold, 100 oz/lot
-        # pip scale parity with the front-end (move * 10^(prec-1)):
+        # parity with the front-end convention (pips = move * 10^(prec-1)):
         self.assertAlmostEqual(pip_size(5), 0.0001)  # eurusd
         self.assertAlmostEqual(pip_size(3), 0.01)    # gbpjpy
         self.assertAlmostEqual(pip_size(2), 0.1)     # xauusd

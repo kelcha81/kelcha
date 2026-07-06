@@ -1,0 +1,13 @@
+[
+  { "symbol": "eurusd", "label": "EUR/USD", "instrumentCode": "eurusd", "pricePrecision": 5, "assetClass": "forex", "available": true, "contractSize": 100000 },
+  { "symbol": "gbpusd", "label": "GBP/USD", "instrumentCode": "gbpusd", "pricePrecision": 5, "assetClass": "forex", "available": true, "contractSize": 100000 },
+  { "symbol": "usdchf", "label": "USD/CHF", "instrumentCode": "usdchf", "pricePrecision": 5, "assetClass": "forex", "available": true, "contractSize": 100000 },
+  { "symbol": "eurgbp", "label": "EUR/GBP", "instrumentCode": "eurgbp", "pricePrecision": 5, "assetClass": "forex", "available": true, "contractSize": 100000 },
+  { "symbol": "gbpjpy", "label": "GBP/JPY", "instrumentCode": "gbpjpy", "pricePrecision": 3, "assetClass": "forex", "available": true, "contractSize": 100000 },
+  { "symbol": "us30", "label": "US30 (Dow)", "instrumentCode": "usa30idxusd", "pricePrecision": 1, "assetClass": "index", "available": true, "contractSize": 1 },
+  { "symbol": "nas100", "label": "NAS100", "instrumentCode": "usatechidxusd", "pricePrecision": 1, "assetClass": "index", "available": true, "contractSize": 1 },
+  { "symbol": "us500", "label": "S&P 500", "instrumentCode": "usa500idxusd", "pricePrecision": 1, "assetClass": "index", "available": true, "contractSize": 1 },
+  { "symbol": "ger40", "label": "GER40 (DAX)", "instrumentCode": "deuidxeur", "pricePrecision": 1, "assetClass": "index", "available": true, "contractSize": 1 },
+  { "symbol": "ftse100", "label": "FTSE 100", "instrumentCode": "gbridxgbp", "pricePrecision": 1, "assetClass": "index", "available": true, "contractSize": 1 },
+  { "symbol": "xauusd", "label": "Gold (XAU/USD)", "instrumentCode": "xauusd", "pricePrecision": 2, "assetClass": "commodity", "available": true, "contractSize": 100 }
+]

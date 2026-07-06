@@ -1,4 +1,5 @@
 import { readdir, readFile, mkdir, writeFile, unlink } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { aggregateCandles } from './aggregate.js';
@@ -28,8 +29,14 @@ const SYMBOL = (process.argv[2] || 'eurusd').toLowerCase();
 // dev defaults to public/data so `npm run` / the /api/symbols/package route work.
 const OUT_BASE = process.env.PACKAGE_OUT_DIR || join(HERE, '..', 'public', 'data');
 const OUT_DIR = join(OUT_BASE, SYMBOL);
-// Optional precision arg (indices need 1); else infer from the symbol.
-const pricePrecision = process.argv[3] ? Number(process.argv[3]) : SYMBOL.endsWith('jpy') ? 3 : 5;
+// Per-symbol specs from the shared registry; stamped into the manifest so the
+// engine and client price this symbol with the same contract/precision specs.
+const INSTRUMENTS = JSON.parse(readFileSync(join(HERE, 'instruments.json'), 'utf8'));
+const INSTRUMENT = INSTRUMENTS.find((s) => s.symbol === SYMBOL) ?? null;
+// Precision: explicit arg > registry > legacy suffix inference.
+const pricePrecision = process.argv[3]
+  ? Number(process.argv[3])
+  : (INSTRUMENT?.pricePrecision ?? (SYMBOL.endsWith('jpy') ? 3 : 5));
 
 // ---- NY-local calendar helpers (hour-cached DST-aware offset) ----------------
 const dtf = new Intl.DateTimeFormat('en-US', {
@@ -199,7 +206,16 @@ async function main() {
   // re-seed just the delta (the daily refresh Job advances dataMax).
   const dataMin = m1.length ? m1[0].timestamp : 0;
   const dataMax = m1.length ? m1[m1.length - 1].timestamp : 0;
-  const manifest = { symbol: SYMBOL, pricePrecision, dataMin, dataMax, timeframes };
+  const manifest = {
+    symbol: SYMBOL,
+    pricePrecision,
+    dataMin,
+    dataMax,
+    // registry specs travel with the data: the engine reads contractSize (etc.)
+    // from here instead of a hand-maintained mirror.
+    ...(INSTRUMENT ? { instrument: INSTRUMENT } : {}),
+    timeframes
+  };
   await writeFile(join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
   console.log(`[${SYMBOL}] manifest written -> public/data/${SYMBOL}/manifest.json`);
 }
