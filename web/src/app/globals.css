@@ -31,3 +31,16 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Grab cursor over draggable trade levels. klinecharts forces an inline
+   `cursor: crosshair` on its inner canvas containers, so we override from
+   <body> down (guaranteed ancestor of every chart canvas) with !important —
+   a stylesheet !important rule beats a child's inline non-important cursor. */
+body.kx-grab,
+body.kx-grab * {
+  cursor: grab !important;
+}
+body.kx-grabbing,
+body.kx-grabbing * {
+  cursor: grabbing !important;
+}

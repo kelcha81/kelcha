@@ -1,77 +1,62 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { OverlayEvent } from 'klinecharts';
+import { OverlayMode, type OverlayEvent } from 'klinecharts';
 import { useActiveChart } from '@/store/chartStore';
 import { useWorkspaceStore, useActiveTab } from '@/store/workspaceStore';
 import { useReplayStore } from '@/store/replayStore';
 import { useTradingStore, type Side } from '@/store/tradingStore';
-import { useOrderToolStore } from '@/store/orderToolStore';
+import { useOrderToolStore, type OrderField } from '@/store/orderToolStore';
 import { getSymbolInfo } from '@/lib/symbols';
-import { registerPriceTag, PRICE_TAG } from '@/lib/overlays/priceTag';
 import { registerLivePosition, LIVE_POSITION } from '@/lib/overlays/livePosition';
+import { registerPositionLevel, POSITION_LEVEL } from '@/lib/overlays/positionLevel';
 
 const ENTRY = '#3b82f6';
 const STOP = '#dc2626';
 const TARGET = '#16a34a';
+const PENDING = '#a855f7';
 
-// One draggable box per open position / resting order, keyed by trade id so a
-// value change (panel edit or a chart drag) updates in place — no remove/recreate
-// flicker and a drag is never destroyed mid-gesture. The order being composed
-// renders as (non-draggable) price-axis tags. Driven by trading state; renders nothing.
+// Live trade visuals on the active chart: a locked shaded risk/reward BOX per
+// open position / pending / projection, plus a draggable LINE + LABEL per level
+// (entry/SL/TP). Grabbing a line or its label anywhere across the chart adjusts
+// the level (a filled position's entry is locked). Renders nothing.
 
 interface BoxItem {
   key: string;
-  id: string;
-  kind: 'position' | 'pending';
   time: number;
-  side: Side;
   entryPrice: number;
   sl?: number;
   tp?: number;
-  size: number;
-  contractSize: number;
 }
 
-interface BoxExt {
-  id: string;
-  kind: 'position' | 'pending';
+// What a dragged level commits to, carried in its extendData.
+interface LevelExt {
+  target: 'position' | 'pending' | 'projection';
+  id: string; // trade id ('' for projection)
+  field: OrderField;
   side: Side;
-  qty: number;
-  prec: number;
-  entry: number;
-  sl?: number;
-  tp?: number;
-  pending: boolean;
+  entry: number; // for SL/TP side validation
+  color?: string;
+  label?: string;
 }
+
+interface LineSpec {
+  value: number;
+  time: number; // x-anchor so klinecharts finishes the overlay (draggable)
+  lock: boolean; // filled-position entry is display-only
+  ext: LevelExt;
+}
+
+const validSl = (side: Side, entry: number, v: number) => (side === 'long' ? v < entry : v > entry);
+const validTp = (side: Side, entry: number, v: number) => (side === 'long' ? v > entry : v < entry);
 
 function boxPoints(item: BoxItem) {
-  // SL/TP default to entry when absent so their handle sits on the entry line
-  // and can be dragged out to create the level.
   return [
     { timestamp: item.time, value: item.entryPrice },
     { timestamp: item.time, value: item.sl ?? item.entryPrice },
     { timestamp: item.time, value: item.tp ?? item.entryPrice }
   ];
 }
-
-function boxExt(item: BoxItem, prec: number): BoxExt {
-  return {
-    id: item.id,
-    kind: item.kind,
-    side: item.side,
-    qty: item.size * item.contractSize,
-    prec,
-    entry: item.entryPrice,
-    sl: item.sl,
-    tp: item.tp,
-    pending: item.kind === 'pending'
-  };
-}
-
-// SL must sit on the losing side of entry, TP on the winning side.
-const validSl = (side: Side, entry: number, v: number) => (side === 'long' ? v < entry : v > entry);
-const validTp = (side: Side, entry: number, v: number) => (side === 'long' ? v > entry : v < entry);
 
 export function TradeLines() {
   const chart = useActiveChart();
@@ -90,194 +75,178 @@ export function TradeLines() {
   const lots = useOrderToolStore((s) => s.lots);
   const head = useReplayStore((s) => s.currentTimestamp);
 
-  const boxesRef = useRef<Map<string, string>>(new Map()); // trackKey → overlayId
-  const projectionRef = useRef<string | null>(null); // the composed-order projection overlay
-  const tagsRef = useRef<string[]>([]);
-  const draggingRef = useRef<string | null>(null); // overlayId being dragged
+  const boxesRef = useRef<Map<string, string>>(new Map());
+  const linesRef = useRef<Map<string, { id: string; value: number; label: string }>>(new Map());
+  const draggingRef = useRef<string | null>(null);
   const chartRef = useRef(chart);
+
+  useEffect(() => {
+    registerLivePosition();
+    registerPositionLevel();
+  }, []);
 
   // A composed order / projection shouldn't carry across tab switches.
   useEffect(() => {
     queueMicrotask(() => useOrderToolStore.getState().cancel());
   }, [activeTabId]);
 
-  useEffect(() => {
-    registerPriceTag();
-    registerLivePosition();
-  }, []);
-
-  // Re-derive the authoritative box for one overlay from the live store and push
-  // it back — snaps an ignored/invalid drag (or a committed one) to true state.
-  const snapBack = (overlayId: string, ext: BoxExt) => {
-    if (!chart) return;
-    const st = useTradingStore.getState();
-    const tabId = useWorkspaceStore.getState().activeTabId;
-    const src =
-      ext.kind === 'position'
-        ? (st.positions[tabId] ?? []).find((p) => p.id === ext.id)
-        : (st.pending[tabId] ?? []).find((o) => o.id === ext.id);
-    if (!src) {
-      chart.removeOverlay(overlayId);
-      return;
-    }
-    const item: BoxItem = {
-      key: '',
-      id: ext.id,
-      kind: ext.kind,
-      time: ext.kind === 'position' ? (src as { entryTime: number }).entryTime : (src as { createdTime: number }).createdTime,
-      side: src.side,
-      entryPrice: src.entryPrice,
-      sl: src.sl,
-      tp: src.tp,
-      size: src.size,
-      contractSize: src.contractSize
-    };
-    chart.overrideOverlay({ id: overlayId, points: boxPoints(item), extendData: boxExt(item, ext.prec) });
+  const setCursor = (cls: 'kx-grab' | 'kx-grabbing' | null) => {
+    const el = document.body;
+    el.classList.remove('kx-grab', 'kx-grabbing');
+    if (cls) el.classList.add(cls);
   };
 
-  const onPressedMoveStart = (e: OverlayEvent) => {
+  const onEnter = () => {
+    if (!draggingRef.current) setCursor('kx-grab');
+    return false;
+  };
+  const onLeave = () => {
+    if (!draggingRef.current) setCursor(null);
+    return false;
+  };
+  const onLevelMoveStart = (e: OverlayEvent) => {
     draggingRef.current = e.overlay.id;
+    setCursor('kx-grabbing');
     return false;
   };
 
-  const onPressedMoveEnd = (e: OverlayEvent) => {
-    const ext = e.overlay.extendData as BoxExt;
+  const commitLevel = (e: OverlayEvent) => {
+    const ext = e.overlay.extendData as LevelExt;
+    const v = e.overlay.points[0]?.value;
+    const ts = e.overlay.points[0]?.timestamp;
+    draggingRef.current = null;
+    setCursor('kx-grab');
+    if (v == null) return false;
     const tabId = useWorkspaceStore.getState().activeTabId;
     const store = useTradingStore.getState();
-    const pts = e.overlay.points;
-    const nEntry = pts[0]?.value;
-    const nSl = pts[1]?.value;
-    const nTp = pts[2]?.value;
-    const baseSl = ext.sl ?? ext.entry;
-    const baseTp = ext.tp ?? ext.entry;
 
-    // Exactly one handle moves per gesture; find it and commit that level.
-    if (ext.kind === 'pending') {
-      if (nEntry != null && nEntry !== ext.entry) store.modifyPending(tabId, ext.id, { entryPrice: nEntry });
-      else if (nSl != null && nSl !== baseSl && validSl(ext.side, ext.entry, nSl)) store.modifyPending(tabId, ext.id, { sl: nSl });
-      else if (nTp != null && nTp !== baseTp && validTp(ext.side, ext.entry, nTp)) store.modifyPending(tabId, ext.id, { tp: nTp });
+    let authoritative = v;
+    if (ext.target === 'projection') {
+      useOrderToolStore.getState().setValue(ext.field, v);
+    } else if (ext.field === 'entry') {
+      store.modifyPending(tabId, ext.id, { entryPrice: v });
     } else {
-      // Open position: entry is filled and not adjustable (snaps back).
-      if (nSl != null && nSl !== baseSl && validSl(ext.side, ext.entry, nSl)) store.modify(tabId, ext.id, { sl: nSl });
-      else if (nTp != null && nTp !== baseTp && validTp(ext.side, ext.entry, nTp)) store.modify(tabId, ext.id, { tp: nTp });
+      const ok = ext.field === 'sl' ? validSl(ext.side, ext.entry, v) : validTp(ext.side, ext.entry, v);
+      if (ok) {
+        const patch = ext.field === 'sl' ? { sl: v } : { tp: v };
+        if (ext.target === 'pending') store.modifyPending(tabId, ext.id, patch);
+        else store.modify(tabId, ext.id, patch);
+      } else {
+        const src =
+          ext.target === 'pending'
+            ? (store.pending[tabId] ?? []).find((o) => o.id === ext.id)
+            : (store.positions[tabId] ?? []).find((p) => p.id === ext.id);
+        authoritative = (ext.field === 'sl' ? src?.sl : src?.tp) ?? ext.entry;
+      }
     }
-
-    draggingRef.current = null;
-    snapBack(e.overlay.id, ext); // reset even when nothing committed (invalid / entry drag)
-    return false;
-  };
-
-  // Dragging the projection edits the composer (bidirectional with the ticket).
-  const onProjectionMoveEnd = (e: OverlayEvent) => {
-    const pts = e.overlay.points;
-    const store = useOrderToolStore.getState();
-    if (pts[0]?.value != null) store.setValue('entry', pts[0].value);
-    if (pts[1]?.value != null) store.setValue('sl', pts[1].value);
-    if (pts[2]?.value != null) store.setValue('tp', pts[2].value);
-    draggingRef.current = null;
+    chart?.overrideOverlay({ id: e.overlay.id, points: [{ timestamp: ts, value: authoritative }] });
+    for (const rec of linesRef.current.values()) {
+      if (rec.id === e.overlay.id) rec.value = authoritative;
+    }
     return false;
   };
 
   useEffect(() => {
     if (!chart) return;
-    // Active chart changed → the old chart's overlays went with it; start clean.
     if (chartRef.current !== chart) {
       boxesRef.current = new Map();
-      tagsRef.current = [];
+      linesRef.current = new Map();
       chartRef.current = chart;
     }
-    const map = boxesRef.current;
+    const boxes = boxesRef.current;
+    const lines = linesRef.current;
+    const pipMult = Math.pow(10, prec - 1);
 
-    const desired = new Map<string, BoxItem>();
-    for (const p of positions ?? [])
-      desired.set(`position:${p.id}`, {
-        key: `position:${p.id}`,
-        id: p.id,
-        kind: 'position',
-        time: p.entryTime,
-        side: p.side,
-        entryPrice: p.entryPrice,
-        sl: p.sl,
-        tp: p.tp,
-        size: p.size,
-        contractSize: p.contractSize
-      });
-    for (const o of pending ?? [])
-      desired.set(`pending:${o.id}`, {
-        key: `pending:${o.id}`,
-        id: o.id,
-        kind: 'pending',
-        time: o.createdTime,
-        side: o.side,
-        entryPrice: o.entryPrice,
-        sl: o.sl,
-        tp: o.tp,
-        size: o.size,
-        contractSize: o.contractSize
-      });
+    const levelLabel = (field: OrderField, price: number, e2: number, qty: number, side: Side, s2?: number, t2?: number) => {
+      if (field === 'entry') {
+        const rr = s2 != null && t2 != null && Math.abs(e2 - s2) > 0 ? (Math.abs(t2 - e2) / Math.abs(e2 - s2)).toFixed(2) : '—';
+        return `${side === 'long' ? 'LONG' : 'SHORT'} ${qty}  ${price.toFixed(prec)}  R/R ${rr}`;
+      }
+      const dist = Math.abs(price - e2);
+      return `${field.toUpperCase()} ${price.toFixed(prec)}  ${(dist * pipMult).toFixed(1)}p  ${field === 'tp' ? '+' : '-'}${(dist * qty).toFixed(2)}`;
+    };
 
-    // Remove boxes whose trade is gone (closed / filled / cancelled).
-    for (const [key, id] of map) {
-      if (!desired.has(key)) {
+    // --- shaded risk/reward boxes ---
+    const desiredBoxes = new Map<string, BoxItem>();
+    for (const p of positions ?? []) desiredBoxes.set(`position:${p.id}`, { key: `position:${p.id}`, time: p.entryTime, entryPrice: p.entryPrice, sl: p.sl, tp: p.tp });
+    for (const o of pending ?? []) desiredBoxes.set(`pending:${o.id}`, { key: `pending:${o.id}`, time: o.createdTime, entryPrice: o.entryPrice, sl: o.sl, tp: o.tp });
+    if (projecting && entry != null && head != null)
+      desiredBoxes.set('projection', { key: 'projection', time: head, entryPrice: entry, sl: sl ?? undefined, tp: tp ?? undefined });
+
+    for (const [key, id] of boxes) {
+      if (!desiredBoxes.has(key)) {
         chart.removeOverlay(id);
-        map.delete(key);
+        boxes.delete(key);
       }
     }
-    // Create new boxes; update existing in place (skip one being dragged).
-    for (const [key, item] of desired) {
+    for (const [key, item] of desiredBoxes) {
       const points = boxPoints(item);
-      const extendData = boxExt(item, prec);
-      const existing = map.get(key);
+      const existing = boxes.get(key);
+      if (existing) chart.overrideOverlay({ id: existing, points });
+      else {
+        const id = chart.createOverlay({ name: LIVE_POSITION, lock: true, points });
+        if (typeof id === 'string') boxes.set(key, id);
+      }
+    }
+
+    // --- draggable level lines + labels ---
+    const anchor = head ?? Date.now();
+    const desired = new Map<string, LineSpec & { label: string }>();
+    const add = (key: string, color: string, lock: boolean, value: number, time: number, field: OrderField, target: LevelExt['target'], id: string, side: Side, e2: number, qty: number, s2?: number, t2?: number) => {
+      const label = levelLabel(field, value, e2, qty, side, s2, t2);
+      desired.set(key, { value, time, lock, label, ext: { target, id, field, side, entry: e2, color, label } });
+    };
+    for (const p of positions ?? []) {
+      const qty = p.size * contractSize;
+      add(`position:${p.id}:entry`, ENTRY, true, p.entryPrice, p.entryTime, 'entry', 'position', p.id, p.side, p.entryPrice, qty, p.sl, p.tp);
+      if (p.sl != null) add(`position:${p.id}:sl`, STOP, false, p.sl, p.entryTime, 'sl', 'position', p.id, p.side, p.entryPrice, qty);
+      if (p.tp != null) add(`position:${p.id}:tp`, TARGET, false, p.tp, p.entryTime, 'tp', 'position', p.id, p.side, p.entryPrice, qty);
+    }
+    for (const o of pending ?? []) {
+      const qty = o.size * contractSize;
+      add(`pending:${o.id}:entry`, PENDING, false, o.entryPrice, o.createdTime, 'entry', 'pending', o.id, o.side, o.entryPrice, qty, o.sl, o.tp);
+      if (o.sl != null) add(`pending:${o.id}:sl`, STOP, false, o.sl, o.createdTime, 'sl', 'pending', o.id, o.side, o.entryPrice, qty);
+      if (o.tp != null) add(`pending:${o.id}:tp`, TARGET, false, o.tp, o.createdTime, 'tp', 'pending', o.id, o.side, o.entryPrice, qty);
+    }
+    if (projecting && entry != null) {
+      const qty = lots * contractSize;
+      add('projection:entry', PENDING, false, entry, anchor, 'entry', 'projection', '', composerSide, entry, qty, sl ?? undefined, tp ?? undefined);
+      if (sl != null) add('projection:sl', STOP, false, sl, anchor, 'sl', 'projection', '', composerSide, entry, qty);
+      if (tp != null) add('projection:tp', TARGET, false, tp, anchor, 'tp', 'projection', '', composerSide, entry, qty);
+    }
+
+    for (const [key, rec] of lines) {
+      if (!desired.has(key)) {
+        chart.removeOverlay(rec.id);
+        lines.delete(key);
+      }
+    }
+    for (const [key, spec] of desired) {
+      const existing = lines.get(key);
       if (existing) {
-        if (existing !== draggingRef.current) chart.overrideOverlay({ id: existing, points, extendData });
+        if (existing.id !== draggingRef.current && (existing.value !== spec.value || existing.label !== spec.label)) {
+          chart.overrideOverlay({ id: existing.id, points: [{ timestamp: spec.time, value: spec.value }], extendData: spec.ext });
+          existing.value = spec.value;
+          existing.label = spec.label;
+        }
+      } else if (spec.lock) {
+        // Filled-position entry: display-only line + label, no drag/cursor.
+        const id = chart.createOverlay({ name: POSITION_LEVEL, lock: true, points: [{ timestamp: spec.time, value: spec.value }], extendData: spec.ext, onRightClick: () => true });
+        if (typeof id === 'string') lines.set(key, { id, value: spec.value, label: spec.label });
       } else {
-        const id = chart.createOverlay({ name: LIVE_POSITION, lock: false, points, extendData, onPressedMoveStart, onPressedMoveEnd });
-        if (typeof id === 'string') map.set(key, id);
-      }
-    }
-
-    // Order projection (composing via the position tool): one draggable box that
-    // replaces the plain axis tags. Editing it feeds the composer and vice-versa.
-    if (projecting && entry != null && head != null) {
-      const points = [
-        { timestamp: head, value: entry },
-        { timestamp: head, value: sl ?? entry },
-        { timestamp: head, value: tp ?? entry }
-      ];
-      const extendData = {
-        id: '__projection__',
-        kind: 'pending',
-        side: composerSide,
-        qty: lots * contractSize,
-        prec,
-        entry,
-        sl: sl ?? undefined,
-        tp: tp ?? undefined,
-        pending: true,
-        label: 'new'
-      };
-      if (projectionRef.current) {
-        if (projectionRef.current !== draggingRef.current) chart.overrideOverlay({ id: projectionRef.current, points, extendData });
-      } else {
-        const id = chart.createOverlay({ name: LIVE_POSITION, lock: false, points, extendData, onPressedMoveStart, onPressedMoveEnd: onProjectionMoveEnd });
-        if (typeof id === 'string') projectionRef.current = id;
-      }
-    } else if (projectionRef.current) {
-      chart.removeOverlay(projectionRef.current);
-      projectionRef.current = null;
-    }
-
-    // When NOT projecting, show plain axis tags for any picked levels.
-    for (const t of tagsRef.current) chart.removeOverlay(t);
-    tagsRef.current = [];
-    if (!projecting) {
-      const tags: { value: number; color: string }[] = [];
-      if (entry != null) tags.push({ value: entry, color: ENTRY });
-      if (sl != null) tags.push({ value: sl, color: STOP });
-      if (tp != null) tags.push({ value: tp, color: TARGET });
-      for (const t of tags) {
-        const id = chart.createOverlay({ name: PRICE_TAG, lock: true, points: [{ value: t.value }], extendData: { color: t.color, prec } });
-        if (typeof id === 'string') tagsRef.current.push(id);
+        const id = chart.createOverlay({
+          name: POSITION_LEVEL,
+          lock: false,
+          mode: OverlayMode.Normal,
+          points: [{ timestamp: spec.time, value: spec.value }],
+          extendData: spec.ext,
+          onPressedMoveStart: onLevelMoveStart,
+          onPressedMoveEnd: commitLevel,
+          onMouseEnter: onEnter,
+          onMouseLeave: onLeave,
+          onRightClick: () => true
+        });
+        if (typeof id === 'string') lines.set(key, { id, value: spec.value, label: spec.label });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
