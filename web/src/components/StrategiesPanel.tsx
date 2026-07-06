@@ -198,7 +198,9 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
         equity: res.equity,
         annotations: res.annotations ?? [],
         trades: res.trades,
-        ranAt: Date.now()
+        ranAt: Date.now(),
+        // spread conditionally: Firestore persistence rejects undefined fields
+        ...(res.settlement ? { settlement: res.settlement } : {})
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

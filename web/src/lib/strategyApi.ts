@@ -73,6 +73,8 @@ export interface BacktestResult {
   trades: BacktestTrade[];
   equity: { timestamp: number; equity: number }[];
   annotations?: IctAnnotation[];
+  /** Fill granularity: 'm1' = SL/TP resolved intra-bar on M1, 'bar' = pessimistic bar-close. */
+  settlement?: 'm1' | 'bar';
 }
 
 export interface BacktestRequest {

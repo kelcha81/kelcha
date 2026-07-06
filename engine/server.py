@@ -40,11 +40,12 @@ from ai.client import ai_available, generate, list_models
 from ai.sandbox import smoke_test
 from annotations import build_annotations
 from applog import log, log_backtest
-from candles import load_manifest, load_series
+from candles import TF_MINUTES, load_manifest
 from engine import run_backtest
 from labels import has_labels, load_labels
 from metrics import compute_stats, equity_curve
 from models import Account
+from seriescache import RouteDetectorCache, load_series_cached
 
 # Local dev binds 127.0.0.1:8000. On Cloud Run the platform injects PORT
 # (usually 8080) and the container must listen on 0.0.0.0 / all interfaces.
@@ -93,14 +94,15 @@ def run(req: dict) -> dict:
     contract_size = _contract_size(symbol)
 
     frm, to = req.get("from"), req.get("to")
-    base = load_series(symbol, timeframe, from_ts=frm, to_ts=to)
+    base, base_key = load_series_cached(symbol, timeframe, from_ts=frm, to_ts=to)
 
     # higher-timeframe context: requested list, else the strategy's bias tf.
     htf_list = req.get("htf") or [params.get("bias_tf", "h4")]
     htf_map = {}
+    series_keys = {None: base_key}
     for tf in htf_list:
         if tf and tf != timeframe:
-            htf_map[tf] = load_series(symbol, tf, from_ts=frm, to_ts=to)
+            htf_map[tf], series_keys[tf] = load_series_cached(symbol, tf, from_ts=frm, to_ts=to)
 
     acc_in = req.get("account") or {}
     account = Account(
@@ -109,15 +111,36 @@ def run(req: dict) -> dict:
         commission=float(acc_in.get("commission", 0)),
     )
 
+    # Intra-bar fill path: walk M1 inside each base bar so SL-vs-TP ordering is
+    # realistic instead of pessimistic bar-granularity. 'fills': 'bar' opts out.
+    # The window is padded by one base bar so the final bar has its full M1 path.
+    m1 = None
+    settlement = "bar"
+    if timeframe == "m1":
+        settlement = "m1"
+    elif req.get("fills", "m1") != "bar":
+        to_m1 = None if to is None else to + TF_MINUTES.get(timeframe, 1) * 60_000
+        try:
+            m1, _m1_key = load_series_cached(symbol, "m1", from_ts=frm, to_ts=to_m1)
+        except (FileNotFoundError, KeyError):
+            m1 = None
+        if m1:
+            settlement = "m1"
+        else:
+            m1 = None
+
     t0 = time.time()
     strat = strategies.build(name, params)
-    result = run_backtest(strat, base, htf_map, m1=None, account=account,
+    # one detector cache per data window, shared with build_annotations and
+    # kept across requests (seriescache) so iterative tuning re-runs are fast.
+    det_cache = RouteDetectorCache(series_keys)
+    result = run_backtest(strat, base, htf_map, m1=m1, account=account,
                           contract_size=contract_size, price_precision=price_precision,
-                          warmup=int(req.get("warmup", 50)))
+                          warmup=int(req.get("warmup", 50)), detector_cache=det_cache)
 
     stats = compute_stats(result.trades, account.balance)
     equity = [{"timestamp": p["t"], "equity": p["equity"]} for p in equity_curve(result.trades, account.balance)]
-    annotations = build_annotations(base, params)
+    annotations = build_annotations(base, params, cache=det_cache)
     elapsed_ms = round((time.time() - t0) * 1000)
 
     pf = stats["profitFactor"]
@@ -128,16 +151,17 @@ def run(req: dict) -> dict:
         "trades": stats["trades"], "totalPnl": round(stats["totalPnl"], 2),
         "winRate": round(stats["winRate"], 4),
         "profitFactor": pf if math.isfinite(pf) else None,
-        "elapsedMs": elapsed_ms,
+        "elapsedMs": elapsed_ms, "settlement": settlement,
     })
-    log.info("backtest %s %s %s -> %d trades, pnl %.2f (%dms)",
-             symbol, timeframe, name, stats["trades"], stats["totalPnl"], elapsed_ms)
+    log.info("backtest %s %s %s -> %d trades, pnl %.2f (%dms, %s fills)",
+             symbol, timeframe, name, stats["trades"], stats["totalPnl"], elapsed_ms, settlement)
 
     return {
         "stats": stats,
         "trades": [t.to_dict() for t in result.trades],
         "equity": equity,
         "annotations": annotations,
+        "settlement": settlement,
     }
 
 
@@ -189,7 +213,7 @@ def run_calibrate(req: dict) -> dict:
     timeframe = req.get("timeframe", "h1")
     if not has_labels(symbol):
         return {"ok": False, "error": f"No labels for {symbol}. Export tagged trades to engine/labels/{symbol}.json."}
-    candles = load_series(symbol, timeframe, from_ts=req.get("from"), to_ts=req.get("to"))
+    candles, _key = load_series_cached(symbol, timeframe, from_ts=req.get("from"), to_ts=req.get("to"))
     trades = load_labels(symbol)
     best, rows = calibrate.sweep(candles, trades,
                                  max_lag_bars=int(req.get("max_lag_bars", 10)),

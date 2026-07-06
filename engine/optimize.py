@@ -21,10 +21,10 @@ import random
 from typing import Optional
 
 import strategies
-from candles import load_series
 from engine import run_backtest
 from metrics import compute_stats
 from models import Account
+from seriescache import RouteDetectorCache, load_series_cached
 
 # strategy name -> search space. tuple=(low,high[, 'int']) float/int range; list=categorical.
 SPACES: dict[str, dict] = {
@@ -64,15 +64,22 @@ def make_objective(name: str, symbol: str, timeframe: str, htf: list[str],
                    account: Account, contract_size: float, price_precision: int,
                    warmup: int, metric: str, min_trades: int,
                    from_ts: Optional[int] = None, to_ts: Optional[int] = None):
-    base = load_series(symbol, timeframe, from_ts=from_ts, to_ts=to_ts)
-    htf_map = {tf: load_series(symbol, tf, from_ts=from_ts, to_ts=to_ts) for tf in htf if tf and tf != timeframe}
+    base, base_key = load_series_cached(symbol, timeframe, from_ts=from_ts, to_ts=to_ts)
+    htf_map = {}
+    series_keys = {None: base_key}
+    for tf in htf:
+        if tf and tf != timeframe:
+            htf_map[tf], series_keys[tf] = load_series_cached(symbol, tf, from_ts=from_ts, to_ts=to_ts)
+    # trials that sample the same detector params reuse each other's passes.
+    det_cache = RouteDetectorCache(series_keys)
 
     def objective(sampled: dict) -> float:
         params = {**strategies.default_params(name), **sampled}
         try:
             res = run_backtest(strategies.build(name, params), base, htf_map, m1=None,
                                account=account, contract_size=contract_size,
-                               price_precision=price_precision, warmup=warmup)
+                               price_precision=price_precision, warmup=warmup,
+                               detector_cache=det_cache)
         except Exception:  # noqa: BLE001 — a bad param combo must not abort the search
             return -1e9
         stats = compute_stats(res.trades, account.balance)

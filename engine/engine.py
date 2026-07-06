@@ -33,7 +33,8 @@ class EngineContext:
     """Per-step view handed to the strategy: broker + HTF access + symbol specs."""
 
     def __init__(self, broker: Broker, base: list[Candle], htf: dict[str, TimeframeSeries],
-                 contract_size: float, price_precision: int):
+                 contract_size: float, price_precision: int,
+                 detector_cache: Optional[dict] = None):
         self.broker = broker
         self._base_full = base
         self._htf = htf
@@ -41,8 +42,10 @@ class EngineContext:
         self.price_precision = price_precision
         self.now: int = 0
         # detector events computed once over the FULL series, keyed per
-        # (detector, timeframe, params); sliced by confirm_ts each bar (no lookahead).
-        self.detector_cache: dict = {}
+        # (detector, timeframe, params); sliced by confirm_ts each bar (no
+        # lookahead). The server injects a cross-request cache here (see
+        # seriescache.RouteDetectorCache); default is per-run.
+        self.detector_cache: dict = {} if detector_cache is None else detector_cache
 
     def htf(self, timeframe: str) -> list[Candle]:
         series = self._htf.get(timeframe)
@@ -99,7 +102,7 @@ def _subpath(m1: Optional[TimeframeSeries], start: int, end: int, fallback: Cand
 def run_backtest(strategy: Strategy, base: list[Candle], htf_map: dict[str, list[Candle]],
                  m1: Optional[list[Candle]] = None, account: Optional[Account] = None,
                  contract_size: float = 100000.0, price_precision: int = 5,
-                 warmup: int = 50) -> BacktestResult:
+                 warmup: int = 50, detector_cache: Optional[dict] = None) -> BacktestResult:
     account = account or Account()
     base_series = TimeframeSeries("base", base)
     htf_series = {tf: TimeframeSeries(tf, c) for tf, c in htf_map.items()}
@@ -108,7 +111,8 @@ def run_backtest(strategy: Strategy, base: list[Candle], htf_map: dict[str, list
     broker = Broker(account, contract_size,
                     on_open=lambda p: strategy.on_open_position(p),
                     on_close=lambda t: strategy.on_close_position(t))
-    ctx = EngineContext(broker, base, htf_series, contract_size, price_precision)
+    ctx = EngineContext(broker, base, htf_series, contract_size, price_precision,
+                        detector_cache=detector_cache)
     strategy.ctx = ctx
 
     n = len(base)

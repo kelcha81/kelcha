@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 
+import seriescache
 import server
 
 HOUR = 3_600_000
@@ -32,12 +33,14 @@ class TestServerRun(unittest.TestCase):
             json.dump(_candles(60, 4 * HOUR), f)
         self._old = os.environ.get("ICT_DATA_DIR")
         os.environ["ICT_DATA_DIR"] = self.tmp
+        seriescache.clear()
 
     def tearDown(self):
         if self._old is None:
             os.environ.pop("ICT_DATA_DIR", None)
         else:
             os.environ["ICT_DATA_DIR"] = self._old
+        seriescache.clear()
 
     def test_backtest_contract(self):
         out = server.run({
@@ -49,6 +52,8 @@ class TestServerRun(unittest.TestCase):
         self.assertIn("equity", out)
         self.assertIn("annotations", out)
         self.assertIsInstance(out["trades"], list)
+        # fixture has no M1 data -> fills settle at bar granularity, and say so
+        self.assertEqual(out["settlement"], "bar")
         # equity uses the front-end's {timestamp, equity} keys
         self.assertEqual(set(out["equity"][0]), {"timestamp", "equity"})
         self.assertEqual(out["equity"][0]["equity"], 5000)
@@ -71,6 +76,76 @@ class TestServerRun(unittest.TestCase):
         out = server.run_calibrate({"symbol": "testsym", "timeframe": "h1"})
         self.assertFalse(out["ok"])
         self.assertIn("labels", out["error"].lower())
+
+    def _count_fvg_calls(self, fn):
+        """Run ``fn`` counting real FVG detector invocations from both the
+        strategy pass and the annotations pass."""
+        import annotations as annotations_mod
+        import strategy as strategy_mod
+        from ict.fvg import detect_fvgs as real
+        calls = {"n": 0}
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        strategy_mod.detect_fvgs = counting
+        annotations_mod.detect_fvgs = counting
+        try:
+            fn()
+        finally:
+            strategy_mod.detect_fvgs = real
+            annotations_mod.detect_fvgs = real
+        return calls["n"]
+
+    def test_detector_pass_shared_and_cached_across_requests(self):
+        req = {"symbol": "testsym", "timeframe": "h1", "strategy": "killzone_fvg_ob",
+               "htf": ["h4"], "warmup": 10}
+        # one request = at most one FVG pass, shared by strategy + annotations.
+        self.assertEqual(self._count_fvg_calls(lambda: server.run(req)), 1)
+        # an identical request re-uses the cross-request detector cache.
+        self.assertEqual(self._count_fvg_calls(lambda: server.run(req)), 0)
+
+
+class TestServerM1Settlement(unittest.TestCase):
+    """When packaged M1 exists, /backtest walks it for fills and reports so."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        sym_dir = os.path.join(self.tmp, "testsym")
+        os.makedirs(os.path.join(sym_dir, "m1"))
+        with open(os.path.join(sym_dir, "manifest.json"), "w") as f:
+            json.dump({"symbol": "testsym", "pricePrecision": 5,
+                       "timeframes": {"h1": {"file": "h1.json"}, "h4": {"file": "h4.json"},
+                                      "m1": {"chunks": ["m1/1970-01.json"]}}}, f)
+        with open(os.path.join(sym_dir, "h1.json"), "w") as f:
+            json.dump(_candles(200, HOUR), f)
+        with open(os.path.join(sym_dir, "h4.json"), "w") as f:
+            json.dump(_candles(60, 4 * HOUR), f)
+        with open(os.path.join(sym_dir, "m1", "1970-01.json"), "w") as f:
+            json.dump(_candles(600, 60_000), f)
+        self._old = os.environ.get("ICT_DATA_DIR")
+        os.environ["ICT_DATA_DIR"] = self.tmp
+        seriescache.clear()
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("ICT_DATA_DIR", None)
+        else:
+            os.environ["ICT_DATA_DIR"] = self._old
+        seriescache.clear()
+
+    def test_settlement_reported_as_m1(self):
+        req = {"symbol": "testsym", "timeframe": "h1", "strategy": "killzone_fvg_ob",
+               "htf": [], "warmup": 10}
+        out = server.run(req)
+        self.assertEqual(out["settlement"], "m1")
+
+    def test_fills_bar_opts_out(self):
+        req = {"symbol": "testsym", "timeframe": "h1", "strategy": "killzone_fvg_ob",
+               "htf": [], "warmup": 10, "fills": "bar"}
+        out = server.run(req)
+        self.assertEqual(out["settlement"], "bar")
 
 
 if __name__ == "__main__":

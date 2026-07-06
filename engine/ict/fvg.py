@@ -12,9 +12,8 @@ price or as an ATR multiple so the same params travel across instruments.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from models import Candle, ICTEvent
+from ict.scan import FirstCross
 from ict.util import atr
 
 
@@ -24,6 +23,8 @@ def detect_fvgs(candles: list[Candle], min_gap: float = 0.0,
     if n < 3:
         return []
     a = atr(candles, atr_period) if min_gap_atr > 0 else None
+    lows = FirstCross([c.low for c in candles], find_leq=True)
+    highs = FirstCross([c.high for c in candles], find_leq=False)
     out: list[ICTEvent] = []
 
     for i in range(1, n - 1):
@@ -41,7 +42,10 @@ def detect_fvgs(candles: list[Candle], min_gap: float = 0.0,
             continue
 
         confirm_ts = nxt.timestamp
-        mitigated_at = _mitigation(candles, i + 2, direction, top, bottom)
+        # first later candle trading back into the gap: bull gaps are filled
+        # from above (a low dipping to the top), bear gaps from below.
+        j = lows.first(i + 2, top) if direction == "bull" else highs.first(i + 2, bottom)
+        mitigated_at = candles[j].timestamp if j is not None else None
         out.append(ICTEvent(
             type="fvg", direction=direction,
             t_start=mid.timestamp, t_end=mitigated_at,
@@ -51,15 +55,3 @@ def detect_fvgs(candles: list[Candle], min_gap: float = 0.0,
             meta={"midTs": mid.timestamp},
         ))
     return out
-
-
-def _mitigation(candles: list[Candle], start: int, direction: str,
-                top: float, bottom: float) -> Optional[int]:
-    """First candle from ``start`` that trades back into the gap, else None."""
-    for j in range(start, len(candles)):
-        c = candles[j]
-        if direction == "bull" and c.low <= top:
-            return c.timestamp
-        if direction == "bear" and c.high >= bottom:
-            return c.timestamp
-    return None
