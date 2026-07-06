@@ -2,12 +2,13 @@
 
 import { useEffect, useRef } from 'react';
 import { OverlayMode, type OverlayEvent } from 'klinecharts';
-import { useActiveChart } from '@/store/chartStore';
+import { useActiveChart, useChartStore } from '@/store/chartStore';
 import { useWorkspaceStore, useActiveTab } from '@/store/workspaceStore';
 import { useReplayStore } from '@/store/replayStore';
 import { useTradingStore, type Side } from '@/store/tradingStore';
 import { useOrderToolStore, type OrderField } from '@/store/orderToolStore';
 import { getSymbolInfo } from '@/lib/symbols';
+import { setGrabCursor } from '@/lib/cursor';
 import { registerLivePosition, LIVE_POSITION } from '@/lib/overlays/livePosition';
 import { registerPositionLevel, POSITION_LEVEL } from '@/lib/overlays/positionLevel';
 
@@ -90,23 +91,17 @@ export function TradeLines() {
     queueMicrotask(() => useOrderToolStore.getState().cancel());
   }, [activeTabId]);
 
-  const setCursor = (cls: 'kx-grab' | 'kx-grabbing' | null) => {
-    const el = document.body;
-    el.classList.remove('kx-grab', 'kx-grabbing');
-    if (cls) el.classList.add(cls);
-  };
-
   const onEnter = () => {
-    if (!draggingRef.current) setCursor('kx-grab');
+    if (!draggingRef.current && !useChartStore.getState().activeTool) setGrabCursor('grab');
     return false;
   };
   const onLeave = () => {
-    if (!draggingRef.current) setCursor(null);
+    if (!draggingRef.current) setGrabCursor(null);
     return false;
   };
   const onLevelMoveStart = (e: OverlayEvent) => {
     draggingRef.current = e.overlay.id;
-    setCursor('kx-grabbing');
+    setGrabCursor('grabbing');
     return false;
   };
 
@@ -115,7 +110,7 @@ export function TradeLines() {
     const v = e.overlay.points[0]?.value;
     const ts = e.overlay.points[0]?.timestamp;
     draggingRef.current = null;
-    setCursor('kx-grab');
+    setGrabCursor('grab');
     if (v == null) return false;
     const tabId = useWorkspaceStore.getState().activeTabId;
     const store = useTradingStore.getState();
