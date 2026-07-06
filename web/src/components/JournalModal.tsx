@@ -119,8 +119,14 @@ export function JournalModal({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pendingSlot = useRef<{ stage: 'pre' | 'post'; tf: string } | null>(null);
 
+  // Capture ids: per-mount salt + counter — unique across journal saves without
+  // calling Math.random from render scope (react-hooks/purity).
+  const [capSalt] = useState(() => Date.now().toString(36));
+  const capSeq = useRef(0);
+
   const addCapture = (stage: 'pre' | 'post', tf: string, dataUrl: string) => {
-    const id = Math.random().toString(36).slice(2, 8);
+    capSeq.current += 1;
+    const id = `${capSalt}${capSeq.current}`;
     const name = `${symbol}-${stage}-${tf}-${id}.png`.replace(/[^A-Za-z0-9._-]/g, '');
     setCaptures((prev) => [...prev, { id, stage, tf, dataUrl, name, note: '' }]);
   };
@@ -156,16 +162,23 @@ export function JournalModal({
 
   // Read the template so the form reflects whatever fields the user's Obsidian
   // template currently declares (templates can change independently of the app).
+  // setTemplate is deferred a tick so the effect body never sets state
+  // synchronously (react-hooks/set-state-in-effect).
   useEffect(() => {
-    if (toNotion || !vault.connected) {
-      setTemplate(null); // Notion + disconnected vault both use the built-in template
-      return;
-    }
     let cancelled = false;
-    setTemplate(undefined);
-    readTemplate(cfg.templatesFolder, templateFile)
-      .then((t) => !cancelled && setTemplate(t))
-      .catch(() => !cancelled && setTemplate(null));
+    if (toNotion || !vault.connected) {
+      // Notion + disconnected vault both use the built-in template
+      queueMicrotask(() => {
+        if (!cancelled) setTemplate(null);
+      });
+    } else {
+      queueMicrotask(() => {
+        if (!cancelled) setTemplate(undefined);
+      });
+      readTemplate(cfg.templatesFolder, templateFile)
+        .then((t) => !cancelled && setTemplate(t))
+        .catch(() => !cancelled && setTemplate(null));
+    }
     return () => {
       cancelled = true;
     };

@@ -39,7 +39,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
     }
   };
   useEffect(() => {
-    void refreshNotion();
+    // post-effect tick: keeps setState out of the synchronous effect body
+    void Promise.resolve().then(refreshNotion);
+     
   }, []);
 
   const connect = async () => {

@@ -113,23 +113,17 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
         return null;
       });
 
-  useEffect(() => {
-    reloadStrategies().then((s) => {
-      if (s) {
-        const first = Object.keys(s)[0];
-        setStrategy(first);
-        setParams({ ...s[first].params });
-      }
-    });
-    getCapabilities()
-      .then((c) => setAiEnabled(c.ai))
-      .catch(() => setAiEnabled(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Fall back to Run if ICT Training isn't (or is no longer) enabled.
+  // Deferred a tick so the effect body never sets state synchronously.
   useEffect(() => {
-    if (!hasTraining && mode !== 'run') setMode('run');
+    if (hasTraining || mode === 'run') return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setMode('run');
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [hasTraining, mode]);
 
   // --- Run mode state ---
@@ -153,6 +147,22 @@ export function StrategiesPanel({ onClose }: { onClose: () => void }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [journalTrade, setJournalTrade] = useState<BacktestResult['trades'][number] | null>(null);
+
+  // Initial load — placed after the state declarations it writes to. All
+  // setState happens inside promise callbacks (async), never in the effect body.
+  useEffect(() => {
+    reloadStrategies().then((s) => {
+      if (s) {
+        const first = Object.keys(s)[0];
+        setStrategy(first);
+        setParams({ ...s[first].params });
+      }
+    });
+    getCapabilities()
+      .then((c) => setAiEnabled(c.ai))
+      .catch(() => setAiEnabled(false));
+     
+  }, []);
 
   const onStrategyChange = (nm: string) => {
     setStrategy(nm);

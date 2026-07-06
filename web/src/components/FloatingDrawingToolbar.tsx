@@ -34,20 +34,18 @@ export function FloatingDrawingToolbar() {
   const overlay = selected ? selected.chart.getOverlayById(selected.id) : null;
 
   // Anchor to the pane's top-center; recompute on selection, resize, layout.
+  // No null-resets needed: rendering already guards on `selected && overlay && pos`.
   useLayoutEffect(() => {
-    if (!selected || !paneId) {
-      setPos(null);
-      return;
-    }
+    if (!selected || !paneId) return;
     const container = useChartStore.getState().charts[paneId]?.container;
-    if (!container) {
-      setPos(null);
-      return;
-    }
+    if (!container) return;
     const place = () => {
       const r = container.getBoundingClientRect();
       setPos({ top: r.top + 8, left: r.left + r.width / 2 });
     };
+    // Measure-and-position in a layout effect is the documented React pattern;
+    // deferring this first placement would paint one mispositioned frame.
+     
     place();
     const ro = new ResizeObserver(place);
     ro.observe(container);

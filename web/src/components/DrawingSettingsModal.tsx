@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useDrawingSettingsStore } from '@/store/drawingSettingsStore';
 import { useDrawingDefaultsStore } from '@/store/drawingDefaultsStore';
@@ -25,14 +25,14 @@ export function DrawingSettingsModal() {
   const target = useDrawingSettingsStore((s) => s.target);
   const close = useDrawingSettingsStore((s) => s.closeSettings);
   const templatesByTool = useDrawingDefaultsStore((s) => s.templates);
-  const [tab, setTab] = useState<Tab>('style');
+  // Tab selection is keyed to the overlay it was made for — a different overlay
+  // derives back to 'style' without an effect reset.
+  const [tabFor, setTabFor] = useState<{ overlayId: string | null; tab: Tab }>({ overlayId: null, tab: 'style' });
+  const tab: Tab = tabFor.overlayId === (target?.overlayId ?? null) ? tabFor.tab : 'style';
+  const setTab = (t: Tab) => setTabFor({ overlayId: target?.overlayId ?? null, tab: t });
   const [, setRev] = useState(0); // setRev forces a re-render so inputs reflect the live overlay
 
   const overlay = target ? target.chart.getOverlayById(target.overlayId) : null;
-
-  useEffect(() => {
-    setTab('style');
-  }, [target?.overlayId]);
 
   if (!target || !overlay) return null;
   const a = drawingActions(target);

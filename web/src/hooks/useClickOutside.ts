@@ -10,7 +10,9 @@ export function useClickOutside(
   onClose: () => void
 ): void {
   const cb = useRef(onClose);
-  cb.current = onClose;
+  useEffect(() => {
+    cb.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!enabled) return;

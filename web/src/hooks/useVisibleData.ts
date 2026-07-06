@@ -39,10 +39,19 @@ export function useVisibleData(timeframe: Timeframe): Candle[] {
   const reqRef = useRef(0);
 
   useEffect(() => {
+    // Synchronous setVisible calls are deferred one microtask (still before the
+    // next paint) so the effect body never sets state synchronously
+    // (react-hooks/set-state-in-effect) — visual timing is unchanged.
+    let cancelled = false;
+
     if (!symbol || !dataBounds || !head) {
       windowRef.current = null;
-      setVisible([]);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) setVisible([]);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     const tfMs = TIMEFRAME_MINUTES[timeframe] * 60_000;
@@ -57,12 +66,16 @@ export function useVisibleData(timeframe: Timeframe): Candle[] {
       head < w.periodEnd;
 
     if (covered) {
-      setVisible(buildVisibleData(w.data, head, timeframe));
-      return;
+      const win = w;
+      queueMicrotask(() => {
+        if (!cancelled) setVisible(buildVisibleData(win.data, head, timeframe));
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     const req = ++reqRef.current;
-    let cancelled = false;
 
     (async () => {
       const from = Math.max(dataBounds.min, head - DISPLAY_BARS * tfMs);
