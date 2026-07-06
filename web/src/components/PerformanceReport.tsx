@@ -154,8 +154,8 @@ export function PerformanceReport({ onClose }: { onClose: () => void }) {
             entryPrice: journalTrade.entryPrice,
             exitTime: journalTrade.exitTime,
             exitPrice: journalTrade.exitPrice,
-            sl: null,
-            tp: null,
+            sl: journalTrade.sl ?? null,
+            tp: journalTrade.tp ?? null,
             pnl: journalTrade.pnl
           }}
           symbol={symbol}

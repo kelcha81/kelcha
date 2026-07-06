@@ -72,3 +72,99 @@ describe('tradingStore.settle', () => {
     expect(st.trades[TAB] ?? []).toHaveLength(0);
   });
 });
+
+describe('tradingStore position management (C1)', () => {
+  const TAB = 'tab-mgmt';
+  beforeEach(() => useTradingStore.getState().reset());
+
+  const openLong = (over: Partial<Parameters<ReturnType<typeof useTradingStore.getState>['open']>[1]> = {}) => {
+    useTradingStore.getState().open(TAB, {
+      side: 'long',
+      size: 1,
+      contractSize: 100000,
+      entryPrice: 1.1,
+      entryTime: t0,
+      sl: 1.09,
+      tp: 1.13,
+      ...over
+    });
+    return useTradingStore.getState().positions[TAB][0];
+  };
+
+  it('modify adjusts SL/TP and clears a level with null', () => {
+    const p = openLong();
+    useTradingStore.getState().modify(TAB, p.id, { sl: 1.095, tp: 1.14 });
+    let pos = useTradingStore.getState().positions[TAB][0];
+    expect(pos.sl).toBe(1.095);
+    expect(pos.tp).toBe(1.14);
+    useTradingStore.getState().modify(TAB, p.id, { tp: null });
+    pos = useTradingStore.getState().positions[TAB][0];
+    expect(pos.tp).toBeUndefined();
+    expect(pos.sl).toBe(1.095); // untouched
+  });
+
+  it('modifyPending moves entry/size/levels before fill', () => {
+    useTradingStore.getState().placePending(TAB, {
+      side: 'long',
+      size: 1,
+      contractSize: 100000,
+      entryPrice: 1.09,
+      createdTime: t0
+    });
+    const id = useTradingStore.getState().pending[TAB][0].id;
+    useTradingStore.getState().modifyPending(TAB, id, { entryPrice: 1.085, size: 2, sl: 1.08 });
+    const o = useTradingStore.getState().pending[TAB][0];
+    expect(o.entryPrice).toBe(1.085);
+    expect(o.size).toBe(2);
+    expect(o.sl).toBe(1.08);
+  });
+
+  it('partial close books a trade for the closed lots and leaves the rest open', () => {
+    const p = openLong({ size: 1 });
+    useTradingStore.getState().close(TAB, p.id, 1.12, t0 + MIN, 'manual', 0.4);
+    const st = useTradingStore.getState();
+    expect(st.positions[TAB]).toHaveLength(1);
+    expect(st.positions[TAB][0].size).toBeCloseTo(0.6);
+    expect(st.positions[TAB][0].id).toBe(p.id); // remaining keeps the id
+    expect(st.trades[TAB]).toHaveLength(1);
+    const tr = st.trades[TAB][0];
+    expect(tr.size).toBeCloseTo(0.4);
+    expect(tr.id).not.toBe(p.id); // booked partial gets a fresh id
+    expect(tr.pnl).toBeCloseTo(tradePnl('long', 1.1, 1.12, 0.4, 100000));
+    expect(tr.sl).toBe(1.09); // Trade retains SL/TP for journaling
+    expect(tr.tp).toBe(1.13);
+  });
+
+  it('close beyond remaining size closes fully (clamped)', () => {
+    const p = openLong({ size: 0.5 });
+    useTradingStore.getState().close(TAB, p.id, 1.12, t0 + MIN, 'manual', 5);
+    const st = useTradingStore.getState();
+    expect(st.positions[TAB]).toHaveLength(0);
+    expect(st.trades[TAB]).toHaveLength(1);
+    expect(st.trades[TAB][0].size).toBeCloseTo(0.5);
+    expect(st.trades[TAB][0].id).toBe(p.id); // full close keeps id
+  });
+
+  it('reverse closes and opens the opposite side same size', () => {
+    const p = openLong({ size: 1 });
+    useTradingStore.getState().reverse(TAB, p.id, 1.12, t0 + MIN);
+    const st = useTradingStore.getState();
+    expect(st.positions[TAB]).toHaveLength(1);
+    const opp = st.positions[TAB][0];
+    expect(opp.side).toBe('short');
+    expect(opp.size).toBe(1);
+    expect(opp.entryPrice).toBe(1.12);
+    expect(opp.sl).toBeUndefined(); // levels dropped on reverse
+    expect(st.trades[TAB]).toHaveLength(1);
+    expect(st.trades[TAB][0].exitPrice).toBe(1.12);
+  });
+
+  it('a full close via settle SL retains SL/TP on the booked trade', () => {
+    openLong({ sl: 1.09, tp: 1.2 });
+    useTradingStore.getState().settle(TAB, [bar(0, 1.1, 1.1, 1.085, 1.09)]); // hits SL 1.09
+    const tr = useTradingStore.getState().trades[TAB][0];
+    expect(tr.reason).toBe('sl');
+    expect(tr.sl).toBe(1.09);
+    expect(tr.tp).toBe(1.2);
+  });
+});

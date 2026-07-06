@@ -25,6 +25,54 @@ const EMPTY_POS: Position[] = [];
 const EMPTY_PENDING: PendingOrder[] = [];
 const EMPTY_TRADES: Trade[] = [];
 
+/**
+ * Inline price-level editor for an open position / resting order. Uncontrolled
+ * (keyed on `value`) so an external change — e.g. dragging the level on the
+ * chart in C2 — remounts it with the fresh value, with no prop→state effect.
+ * Commits on blur / Enter; empty commits `null` (clears the level, SL/TP only).
+ */
+function LevelEdit({
+  label,
+  value,
+  color,
+  allowClear = true,
+  onCommit
+}: {
+  label: string;
+  value?: number;
+  color: string;
+  allowClear?: boolean;
+  onCommit: (v: number | null) => void;
+}) {
+  const commit = (el: HTMLInputElement) => {
+    const t = el.value.trim();
+    if (t === '') {
+      if (allowClear) onCommit(null);
+      return;
+    }
+    const n = Number(t);
+    if (Number.isFinite(n)) onCommit(n);
+  };
+  return (
+    <label className="flex items-center gap-0.5">
+      <span className="text-[9px] font-semibold uppercase" style={{ color }}>
+        {label}
+      </span>
+      <input
+        key={value ?? 'empty'}
+        defaultValue={value != null ? String(value) : ''}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+        placeholder="—"
+        inputMode="decimal"
+        className="w-16 rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono text-[10px] text-slate-100"
+      />
+    </label>
+  );
+}
+
 export function TradingPanel() {
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const { symbol } = useActiveTab();
@@ -46,6 +94,9 @@ export function TradingPanel() {
   const cancelPending = useTradingStore((s) => s.cancelPending);
   const close = useTradingStore((s) => s.close);
   const closeAll = useTradingStore((s) => s.closeAll);
+  const modify = useTradingStore((s) => s.modify);
+  const modifyPending = useTradingStore((s) => s.modifyPending);
+  const reverse = useTradingStore((s) => s.reverse);
   const setAccount = useTradingStore((s) => s.setAccount);
   const clear = useTradingStore((s) => s.clear);
 
@@ -245,14 +296,21 @@ export function TradingPanel() {
         <div className="space-y-1">
           <div className="text-xs text-slate-400">Pending ({pending.length})</div>
           {pending.map((o) => (
-            <div key={o.id} className="flex items-center justify-between rounded border border-purple-900/60 px-2 py-1 text-xs">
-              <span className={o.side === 'long' ? 'text-green-400' : 'text-red-400'}>
-                {o.side === 'long' ? 'BUY' : 'SELL'} {o.size}
-              </span>
-              <span className="font-mono tabular-nums text-purple-300">@{fmtPrice(o.entryPrice)}</span>
-              <button type="button" onClick={() => cancelPending(activeTabId, o.id)} className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300 hover:bg-slate-700">
-                ✕
-              </button>
+            <div key={o.id} className="rounded border border-purple-900/60 px-2 py-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className={o.side === 'long' ? 'text-green-400' : 'text-red-400'}>
+                  {o.side === 'long' ? 'BUY' : 'SELL'} {o.size}
+                </span>
+                <span className="font-mono tabular-nums text-purple-300">@{fmtPrice(o.entryPrice)}</span>
+                <button type="button" onClick={() => cancelPending(activeTabId, o.id)} className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300 hover:bg-slate-700">
+                  ✕
+                </button>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <LevelEdit label="Entry" value={o.entryPrice} color="#c4b5fd" allowClear={false} onCommit={(v) => v != null && modifyPending(activeTabId, o.id, { entryPrice: v })} />
+                <LevelEdit label="SL" value={o.sl} color="#f87171" onCommit={(v) => modifyPending(activeTabId, o.id, { sl: v })} />
+                <LevelEdit label="TP" value={o.tp} color="#4ade80" onCommit={(v) => modifyPending(activeTabId, o.id, { tp: v })} />
+              </div>
             </div>
           ))}
         </div>
@@ -271,20 +329,45 @@ export function TradingPanel() {
         {positions.map((p) => {
           const upnl = price == null ? 0 : tradePnl(p.side, p.entryPrice, price, p.size, p.contractSize);
           return (
-            <div key={p.id} className="flex items-center justify-between rounded border border-slate-800 px-2 py-1 text-xs">
-              <span className={p.side === 'long' ? 'text-green-400' : 'text-red-400'}>
-                {p.side === 'long' ? 'LONG' : 'SHORT'} {p.size}
-              </span>
-              <span className="font-mono tabular-nums text-slate-400">@{fmtPrice(p.entryPrice)}</span>
-              <span className={`font-mono tabular-nums ${pnlColor(upnl)}`}>{money(upnl)}</span>
-              <button
-                type="button"
-                disabled={price == null}
-                onClick={() => price != null && close(activeTabId, p.id, price, head)}
-                className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
-              >
-                ✕
-              </button>
+            <div key={p.id} className="rounded border border-slate-800 px-2 py-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className={p.side === 'long' ? 'text-green-400' : 'text-red-400'}>
+                  {p.side === 'long' ? 'LONG' : 'SHORT'} {p.size}
+                </span>
+                <span className="font-mono tabular-nums text-slate-400">@{fmtPrice(p.entryPrice)}</span>
+                <span className={`font-mono tabular-nums ${pnlColor(upnl)}`}>{money(upnl)}</span>
+                <button
+                  type="button"
+                  disabled={price == null}
+                  title="Close position"
+                  onClick={() => price != null && close(activeTabId, p.id, price, head)}
+                  className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <LevelEdit label="SL" value={p.sl} color="#f87171" onCommit={(v) => modify(activeTabId, p.id, { sl: v })} />
+                <LevelEdit label="TP" value={p.tp} color="#4ade80" onCommit={(v) => modify(activeTabId, p.id, { tp: v })} />
+                <button
+                  type="button"
+                  disabled={price == null || p.size <= 0}
+                  title="Close half"
+                  onClick={() => price != null && close(activeTabId, p.id, price, head, 'manual', p.size / 2)}
+                  className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                >
+                  ½
+                </button>
+                <button
+                  type="button"
+                  disabled={price == null}
+                  title="Reverse (close and flip side)"
+                  onClick={() => price != null && reverse(activeTabId, p.id, price, head)}
+                  className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                >
+                  Rev
+                </button>
+              </div>
             </div>
           );
         })}
