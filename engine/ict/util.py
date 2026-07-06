@@ -48,9 +48,10 @@ def pip_size(price_precision: int) -> float:
     """
     Price value of one 'pip' for thresholds.
 
-    5/3-dp forex quotes -> pip = 1e-(precision-1) (the 4th/2nd decimal).
-    Indices (precision 1) -> treat 1 point as the unit.
+    Mirrors the front-end (pips = move * 10^(precision-1)): 5/3-dp forex ->
+    pip = 1e-(precision-1) (the 4th/2nd decimal); 2-dp metals (gold) -> 0.1;
+    indices (precision 1) -> 1 point is the unit.
     """
-    if price_precision >= 3:
+    if price_precision >= 2:
         return 10.0 ** (-(price_precision - 1))
     return 1.0

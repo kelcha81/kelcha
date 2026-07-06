@@ -107,6 +107,24 @@ class TestServerRun(unittest.TestCase):
         self.assertEqual(self._count_fvg_calls(lambda: server.run(req)), 0)
 
 
+class TestContractSizesMirrorSymbolsTs(unittest.TestCase):
+    """server._contract_size must track web/src/lib/symbols.ts — a symbol added
+    there without updating the mirror gets 100k contract size and wildly wrong
+    P&L (this bit ftse100/xauusd in the 11-symbol expansion)."""
+
+    def test_contract_sizes(self):
+        from ict.util import pip_size
+        self.assertEqual(server._contract_size("eurusd"), 100000.0)   # forex
+        self.assertEqual(server._contract_size("us30"), 1.0)          # index
+        self.assertEqual(server._contract_size("ftse100"), 1.0)       # index (added 2026-07)
+        self.assertEqual(server._contract_size("xauusd"), 100.0)      # gold, 100 oz/lot
+        # pip scale parity with the front-end (move * 10^(prec-1)):
+        self.assertAlmostEqual(pip_size(5), 0.0001)  # eurusd
+        self.assertAlmostEqual(pip_size(3), 0.01)    # gbpjpy
+        self.assertAlmostEqual(pip_size(2), 0.1)     # xauusd
+        self.assertAlmostEqual(pip_size(1), 1.0)     # indices
+
+
 class TestServerM1Settlement(unittest.TestCase):
     """When packaged M1 exists, /backtest walks it for fills and reports so."""
 
