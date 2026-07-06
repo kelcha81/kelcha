@@ -1,8 +1,10 @@
 import { registerOverlay, type OverlayCreateFiguresCallbackParams, type OverlayFigure } from 'klinecharts';
 
-// Read-only box for a LIVE order/position: entry/SL/TP zones + labels, spanning
-// from the entry candle to the right edge. Driven by trading state (locked,
-// non-persisted) so it stays on the chart until the position is closed.
+// Box for a LIVE order/position: entry/SL/TP zones + labels, spanning from the
+// entry candle to the right edge. Driven by trading state (non-persisted) so it
+// stays on the chart until the position closes. Created draggable by TradeLines
+// (default point handles on) so SL/TP (and a pending's entry) can be adjusted on
+// the chart; the zone/line/pill figures stay ignoreEvent so only the handles grab.
 
 const NAME = 'livePosition';
 let registered = false;
@@ -73,7 +75,9 @@ export function registerLivePosition(): void {
   registerOverlay({
     name: NAME,
     totalStep: 4,
-    needDefaultPointFigure: false,
+    // draggable handles on the entry/SL/TP points (TradeLines maps a moved
+    // handle → tradingStore.modify / modifyPending on onPressedMoveEnd)
+    needDefaultPointFigure: true,
     needDefaultYAxisFigure: true,
     createPointFigures: figures
   });
