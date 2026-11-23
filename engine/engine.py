@@ -29,17 +29,56 @@ class Route:
     params: dict = field(default_factory=dict)
 
 
+class _CandlePrefix:
+    """Zero-copy read-only prefix view over ``base[:_n]`` (no lookahead, O(1) per bar)."""
+
+    __slots__ = ("_base", "_n")
+
+    def __init__(self, base: list[Candle], n: int = 0):
+        self._base = base
+        self._n = n
+
+    def __len__(self) -> int:
+        return self._n
+
+    def __bool__(self) -> bool:
+        return self._n > 0
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            start, stop, step = item.indices(self._n)
+            return [self._base[i] for i in range(start, stop, step)]
+        idx = item if item >= 0 else self._n + item
+        if idx < 0 or idx >= self._n:
+            raise IndexError("candle prefix index out of range")
+        return self._base[idx]
+
+    def __iter__(self):
+        base = self._base
+        for i in range(self._n):
+            yield base[i]
+
+    def __reversed__(self):
+        base = self._base
+        for i in range(self._n - 1, -1, -1):
+            yield base[i]
+
+
 class EngineContext:
     """Per-step view handed to the strategy: broker + HTF access + symbol specs."""
 
     def __init__(self, broker: Broker, base: list[Candle], htf: dict[str, TimeframeSeries],
                  contract_size: float, price_precision: int,
-                 detector_cache: Optional[dict] = None):
+                 detector_cache: Optional[dict] = None,
+                 symbol: str = "", timeframe: str = "", asset_class: str = ""):
         self.broker = broker
         self._base_full = base
         self._htf = htf
         self.contract_size = contract_size
         self.price_precision = price_precision
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.asset_class = asset_class
         self.now: int = 0
         # detector events computed once over the FULL series, keyed per
         # (detector, timeframe, params); sliced by confirm_ts each bar (no
@@ -47,11 +86,21 @@ class EngineContext:
         # seriescache.RouteDetectorCache); default is per-run.
         self.detector_cache: dict = {} if detector_cache is None else detector_cache
 
+    def has_htf(self, timeframe: str) -> bool:
+        return timeframe in self._htf
+
     def htf(self, timeframe: str) -> list[Candle]:
         series = self._htf.get(timeframe)
         if series is None:
             raise KeyError(f"timeframe {timeframe!r} not loaded for this route")
         return series.closed(self.now)
+
+    def htf_closed_count(self, timeframe: str) -> int:
+        """Number of closed candles of ``timeframe`` at ``now`` (O(log N), zero copy)."""
+        series = self._htf.get(timeframe)
+        if series is None:
+            raise KeyError(f"timeframe {timeframe!r} not loaded for this route")
+        return series.closed_count(self.now)
 
     def full(self, timeframe: Optional[str]) -> list[Candle]:
         """Full (all-bars) series for a timeframe — base when ``timeframe`` is None.
@@ -102,9 +151,10 @@ def _subpath(m1: Optional[TimeframeSeries], start: int, end: int, fallback: Cand
 def run_backtest(strategy: Strategy, base: list[Candle], htf_map: dict[str, list[Candle]],
                  m1: Optional[list[Candle]] = None, account: Optional[Account] = None,
                  contract_size: float = 100000.0, price_precision: int = 5,
-                 warmup: int = 50, detector_cache: Optional[dict] = None) -> BacktestResult:
+                 warmup: int = 50, detector_cache: Optional[dict] = None,
+                 symbol: str = "", timeframe: str = "", asset_class: str = "") -> BacktestResult:
     account = account or Account()
-    base_series = TimeframeSeries("base", base)
+    base_series = TimeframeSeries(timeframe or "base", base)
     htf_series = {tf: TimeframeSeries(tf, c) for tf, c in htf_map.items()}
     m1_series = TimeframeSeries("m1", m1) if m1 else None
 
@@ -112,8 +162,11 @@ def run_backtest(strategy: Strategy, base: list[Candle], htf_map: dict[str, list
                     on_open=lambda p: strategy.on_open_position(p),
                     on_close=lambda t: strategy.on_close_position(t))
     ctx = EngineContext(broker, base, htf_series, contract_size, price_precision,
-                        detector_cache=detector_cache)
+                        detector_cache=detector_cache,
+                        symbol=symbol, timeframe=timeframe, asset_class=asset_class)
     strategy.ctx = ctx
+    prefix = _CandlePrefix(base, 0)
+    strategy.candles = prefix  # type: ignore[assignment]
 
     n = len(base)
     for i in range(warmup, n):
@@ -123,7 +176,7 @@ def run_backtest(strategy: Strategy, base: list[Candle], htf_map: dict[str, list
 
         broker.process_bar(bar, _subpath(m1_series, bar.timestamp, now, bar))
 
-        strategy.candles = base[: i + 1]
+        prefix._n = i + 1
         strategy.index = i
         strategy.before()
         if not strategy.has_position and not strategy.has_pending:

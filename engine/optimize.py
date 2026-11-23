@@ -34,6 +34,14 @@ SPACES: dict[str, dict] = {
         "sl_buffer_pips": (0.0, 6.0),
         "swing_lookback": [2, 3, 5],
     },
+    "ict_sweep_cisd": {
+        "entry_mode": [0, 1, 2],
+        "exec_type": [0, 1],
+        "min_prob": [60, 65, 70, 75, 80],
+        "sl_buffer_pips": (3.0, 8.0),
+        "max_adr_pct": (80.0, 110.0),
+        "rr": [2.0, 2.5, 3.0],
+    },
 }
 
 
@@ -79,7 +87,7 @@ def make_objective(name: str, symbol: str, timeframe: str, htf: list[str],
             res = run_backtest(strategies.build(name, params), base, htf_map, m1=None,
                                account=account, contract_size=contract_size,
                                price_precision=price_precision, warmup=warmup,
-                               detector_cache=det_cache)
+                               detector_cache=det_cache, symbol=symbol, timeframe=timeframe)
         except Exception:  # noqa: BLE001 — a bad param combo must not abort the search
             return -1e9
         stats = compute_stats(res.trades, account.balance)
@@ -110,7 +118,9 @@ def search(name: str, symbol: str, timeframe: str = "h1", n_trials: int = 50,
            from_ts: Optional[int] = None, to_ts: Optional[int] = None) -> dict:
     space = space or space_for(name)
     account = account or Account()
-    htf = htf if htf is not None else [strategies.default_params(name).get("bias_tf", "h4")]
+    htf = htf if htf is not None else (
+        strategies.required_htf(name, timeframe) or [strategies.default_params(name).get("bias_tf", "h4")]
+    )
     objective = make_objective(name, symbol, timeframe, htf, account, contract_size,
                                price_precision, warmup, metric, min_trades, from_ts, to_ts)
 

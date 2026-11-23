@@ -22,9 +22,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Symbol list comes from instruments.json — the single registry shared with the
 // web app (src/lib/symbols.ts imports the same file) and the packager (which
 // stamps each entry into its symbol's manifest for the engine).
-const SYMBOLS = JSON.parse(readFileSync(join(HERE, 'instruments.json'), 'utf8'))
-  .filter((s) => s.available)
+// Optional REFRESH_SYMBOLS (comma-separated) restricts a run to specific symbols;
+// CLOUD_RUN_TASK_INDEX / CLOUD_RUN_TASK_COUNT shard symbols across parallel tasks.
+const ONLY = (process.env.REFRESH_SYMBOLS || '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+const TASK_INDEX = Math.max(0, Number(process.env.CLOUD_RUN_TASK_INDEX) || 0);
+const TASK_COUNT = Math.max(1, Number(process.env.CLOUD_RUN_TASK_COUNT) || 1);
+
+const ALL_SYMBOLS = JSON.parse(readFileSync(join(HERE, 'instruments.json'), 'utf8'))
+  .filter((s) => s.available && (ONLY.length === 0 || ONLY.includes(s.symbol)))
   .map((s) => ({ symbol: s.symbol, instrument: s.instrumentCode, precision: s.pricePrecision }));
+const SYMBOLS = ALL_SYMBOLS.filter((_, i) => i % TASK_COUNT === TASK_INDEX);
 
 const FROM = process.env.REFRESH_FROM || '2022-01-01';
 const TO = new Date().toISOString().slice(0, 10); // today (UTC) → data through yesterday
@@ -76,7 +86,9 @@ async function verifySymbol(symbol) {
 }
 
 async function main() {
-  console.log(`Candle refresh ${FROM}..${TO} for ${SYMBOLS.length} symbols`);
+  console.log(
+    `Candle refresh ${FROM}..${TO} for ${SYMBOLS.length}/${ALL_SYMBOLS.length} symbols (task ${TASK_INDEX + 1}/${TASK_COUNT}: ${SYMBOLS.map((s) => s.symbol).join(', ')})`
+  );
   let failed = 0;
   for (const s of SYMBOLS) {
     // Retry the whole per-symbol pipeline once: the download child can be

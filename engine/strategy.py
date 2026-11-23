@@ -29,6 +29,12 @@ class Strategy:
     #: override to declare tunable parameters + defaults
     params: dict[str, Any] = {}
 
+    @classmethod
+    def required_htf(cls, timeframe: str, params: dict) -> list[str]:
+        """Higher timeframes required by this strategy when none are explicitly passed."""
+        tf = params.get("bias_tf")
+        return [tf] if tf else []
+
     def __init__(self, params: Optional[dict] = None):
         self.hp: dict[str, Any] = {**self.params, **(params or {})}
         # injected by the engine each step
@@ -144,17 +150,21 @@ class Strategy:
     def balance(self) -> float:
         return self.ctx.broker.balance
 
-    def buy_market(self, qty: float, sl: Optional[float] = None, tp: Optional[float] = None):
-        self.ctx.broker.submit_market("long", qty, sl, tp)
+    def buy_market(self, qty: float, sl: Optional[float] = None, tp: Optional[float] = None,
+                   note: Optional[str] = None, tags: Optional[str] = None):
+        self.ctx.broker.submit_market("long", qty, sl, tp, note=note, tags=tags)
 
-    def sell_market(self, qty: float, sl: Optional[float] = None, tp: Optional[float] = None):
-        self.ctx.broker.submit_market("short", qty, sl, tp)
+    def sell_market(self, qty: float, sl: Optional[float] = None, tp: Optional[float] = None,
+                    note: Optional[str] = None, tags: Optional[str] = None):
+        self.ctx.broker.submit_market("short", qty, sl, tp, note=note, tags=tags)
 
-    def buy_limit(self, qty: float, price: float, sl=None, tp=None):
-        self.ctx.broker.submit_limit("long", qty, price, sl, tp)
+    def buy_limit(self, qty: float, price: float, sl=None, tp=None,
+                  note: Optional[str] = None, tags: Optional[str] = None):
+        self.ctx.broker.submit_limit("long", qty, price, sl, tp, note=note, tags=tags)
 
-    def sell_limit(self, qty: float, price: float, sl=None, tp=None):
-        self.ctx.broker.submit_limit("short", qty, price, sl, tp)
+    def sell_limit(self, qty: float, price: float, sl=None, tp=None,
+                   note: Optional[str] = None, tags: Optional[str] = None):
+        self.ctx.broker.submit_limit("short", qty, price, sl, tp, note=note, tags=tags)
 
     def cancel(self):
         self.ctx.broker.cancel_pending()

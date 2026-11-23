@@ -29,7 +29,7 @@ import {
   type CalibrateResult
 } from '@/lib/strategyApi';
 
-const TIMEFRAMES = ['m15', 'h1', 'h4', 'd1'];
+const TIMEFRAMES = ['m5', 'm15', 'h1', 'h4', 'd1'];
 
 function Sparkline({ values }: { values: number[] }) {
   const { path, w, h } = useMemo(() => {

@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import os
+import sys
 from typing import Optional
 
 from strategy import Strategy
@@ -23,6 +24,7 @@ USER_DIR = os.path.join(_DIR, "user")
 def _load_module(path: str, modname: str):
     spec = importlib.util.spec_from_file_location(modname, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[modname] = mod
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
 
@@ -76,6 +78,12 @@ def build(name: str, params: Optional[dict] = None) -> Strategy:
 
 def default_params(name: str) -> dict:
     return dict(registry()[name]["cls"].params)
+
+
+def required_htf(name: str, timeframe: str, params: Optional[dict] = None) -> list[str]:
+    cls = registry()[name]["cls"]
+    merged = {**cls.params, **(params or {})}
+    return list(cls.required_htf(timeframe, merged))
 
 
 def info() -> dict:

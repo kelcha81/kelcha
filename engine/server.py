@@ -82,6 +82,15 @@ _load_dotenv()
 LEGACY_INDEX_SYMBOLS = {"us30", "nas100", "us500", "ger40", "ftse100"}
 LEGACY_CONTRACT_SIZES = {"xauusd": 100.0}
 
+# Pre-window lookback padded onto HTF loads so ADR / HTF swings are warmed up on bar 0.
+HTF_WARMUP_MS: dict[str, int] = {
+    "m15": 7 * 86_400_000,
+    "h1": 14 * 86_400_000,
+    "h4": 30 * 86_400_000,
+    "d1": 60 * 86_400_000,
+    "w1": 180 * 86_400_000,
+}
+
 
 def _contract_size(symbol: str, manifest: dict | None = None) -> float:
     spec = (manifest or {}).get("instrument") or {}
@@ -93,6 +102,19 @@ def _contract_size(symbol: str, manifest: dict | None = None) -> float:
     return 1.0 if symbol in LEGACY_INDEX_SYMBOLS else 100000.0
 
 
+def _asset_class(symbol: str, manifest: dict | None = None) -> str:
+    spec = (manifest or {}).get("instrument") or {}
+    ac = spec.get("assetClass")
+    if ac:
+        return str(ac)
+    s = symbol.lower()
+    if s in LEGACY_INDEX_SYMBOLS:
+        return "index"
+    if s in LEGACY_CONTRACT_SIZES:
+        return "commodity"
+    return "forex"
+
+
 def run(req: dict) -> dict:
     symbol = req["symbol"]
     timeframe = req.get("timeframe", "h1")
@@ -102,17 +124,25 @@ def run(req: dict) -> dict:
     manifest = load_manifest(symbol)
     price_precision = int(manifest.get("pricePrecision", 5))
     contract_size = _contract_size(symbol, manifest)
+    asset_class = _asset_class(symbol, manifest)
 
     frm, to = req.get("from"), req.get("to")
     base, base_key = load_series_cached(symbol, timeframe, from_ts=frm, to_ts=to)
 
-    # higher-timeframe context: requested list, else the strategy's bias tf.
-    htf_list = req.get("htf") or [params.get("bias_tf", "h4")]
+    # higher-timeframe context: explicit list when provided, else strategy's required HTFs.
+    if req.get("htf") is not None:
+        htf_list = req["htf"]
+    else:
+        htf_list = strategies.required_htf(name, timeframe, params) or [params.get("bias_tf", "h4")]
     htf_map = {}
     series_keys = {None: base_key}
     for tf in htf_list:
         if tf and tf != timeframe:
-            htf_map[tf], series_keys[tf] = load_series_cached(symbol, tf, from_ts=frm, to_ts=to)
+            htf_frm = max(0, frm - HTF_WARMUP_MS.get(tf, 0)) if frm is not None else None
+            try:
+                htf_map[tf], series_keys[tf] = load_series_cached(symbol, tf, from_ts=htf_frm, to_ts=to)
+            except FileNotFoundError:
+                pass
 
     acc_in = req.get("account") or {}
     account = Account(
@@ -146,7 +176,8 @@ def run(req: dict) -> dict:
     det_cache = RouteDetectorCache(series_keys)
     result = run_backtest(strat, base, htf_map, m1=m1, account=account,
                           contract_size=contract_size, price_precision=price_precision,
-                          warmup=int(req.get("warmup", 50)), detector_cache=det_cache)
+                          warmup=int(req.get("warmup", 50)), detector_cache=det_cache,
+                          symbol=symbol, timeframe=timeframe, asset_class=asset_class)
 
     stats = compute_stats(result.trades, account.balance)
     equity = [{"timestamp": p["t"], "equity": p["equity"]} for p in equity_curve(result.trades, account.balance)]

@@ -29,6 +29,8 @@ class OpenPosition:
     entry_time: int
     sl: Optional[float] = None
     tp: Optional[float] = None
+    note: Optional[str] = None
+    tags: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -39,6 +41,8 @@ class PendingOrder:
     price: float
     sl: Optional[float] = None
     tp: Optional[float] = None
+    note: Optional[str] = None
+    tags: Optional[str] = None
 
 
 class Broker:
@@ -50,7 +54,7 @@ class Broker:
         self.pessimistic = pessimistic
         self.position: Optional[OpenPosition] = None
         self.pending: list[PendingOrder] = []
-        self._market: Optional[tuple] = None  # (side, qty, sl, tp)
+        self._market: Optional[tuple] = None  # (side, qty, sl, tp, note, tags)
         self.trades: list[Trade] = []
         self.balance = account.balance
         self._on_open = on_open
@@ -60,19 +64,22 @@ class Broker:
     # --- order entry ---------------------------------------------------------
 
     def submit_market(self, side: Side, qty: float, sl: Optional[float] = None,
-                      tp: Optional[float] = None) -> None:
+                      tp: Optional[float] = None, note: Optional[str] = None,
+                      tags: Optional[str] = None) -> None:
         if qty > 0:
-            self._market = (side, qty, sl, tp)
+            self._market = (side, qty, sl, tp, note, tags)
 
     def submit_limit(self, side: Side, qty: float, price: float,
-                     sl: Optional[float] = None, tp: Optional[float] = None) -> None:
+                     sl: Optional[float] = None, tp: Optional[float] = None,
+                     note: Optional[str] = None, tags: Optional[str] = None) -> None:
         if qty > 0:
-            self.pending.append(PendingOrder("limit", side, qty, price, sl, tp))
+            self.pending.append(PendingOrder("limit", side, qty, price, sl, tp, note, tags))
 
     def submit_stop(self, side: Side, qty: float, price: float,
-                    sl: Optional[float] = None, tp: Optional[float] = None) -> None:
+                    sl: Optional[float] = None, tp: Optional[float] = None,
+                    note: Optional[str] = None, tags: Optional[str] = None) -> None:
         if qty > 0:
-            self.pending.append(PendingOrder("stop", side, qty, price, sl, tp))
+            self.pending.append(PendingOrder("stop", side, qty, price, sl, tp, note, tags))
 
     def cancel_pending(self) -> None:
         self.pending.clear()
@@ -81,24 +88,32 @@ class Broker:
     # --- per-bar processing --------------------------------------------------
 
     def process_bar(self, bar: Candle, subpath: Optional[list[Candle]] = None) -> None:
-        """Fill queued/pending orders against ``bar`` then manage SL/TP."""
+        """Fill queued/pending orders against ``bar`` then manage SL/TP.
+
+        When an M1 ``subpath`` is supplied, pending limit/stop orders and SL/TP
+        exits are stepped sequentially across the sub-bars so a limit order
+        cannot be settled by an earlier sub-bar before it was actually filled.
+        """
         if self._market is not None and self.position is None:
-            side, qty, sl, tp = self._market
-            self._open(side, qty, bar.open, bar.timestamp, sl, tp)
+            side, qty, sl, tp, note, tags = self._market
+            self._open(side, qty, bar.open, bar.timestamp, sl, tp, note, tags)
             self._market = None
 
-        if self.pending and self.position is None:
-            still: list[PendingOrder] = []
-            for o in self.pending:
-                fill = self._touch(o, bar)
-                if fill is not None and self.position is None:
-                    self._open(o.side, o.qty, fill, bar.timestamp, o.sl, o.tp)
-                else:
-                    still.append(o)
-            self.pending = still
+        steps = subpath or [bar]
+        for c in steps:
+            if self.position is None and self.pending:
+                still: list[PendingOrder] = []
+                for o in self.pending:
+                    fill = self._touch(o, c)
+                    if fill is not None and self.position is None:
+                        self._open(o.side, o.qty, fill, c.timestamp, o.sl, o.tp, o.note, o.tags)
+                    else:
+                        still.append(o)
+                self.pending = still
 
-        if self.position is not None:
-            self._manage(bar, subpath or [bar])
+            if self.position is not None:
+                if self._check_exit(c):
+                    return
 
     def close_at(self, price: float, time: int, reason: str = "manual") -> None:
         """Force-close the open position (e.g. end of data)."""
@@ -108,8 +123,9 @@ class Broker:
     # --- internals -----------------------------------------------------------
 
     def _open(self, side: Side, qty: float, price: float, time: int,
-              sl: Optional[float], tp: Optional[float]) -> None:
-        self.position = OpenPosition(side, qty, self.contract_size, price, time, sl, tp)
+              sl: Optional[float], tp: Optional[float],
+              note: Optional[str] = None, tags: Optional[str] = None) -> None:
+        self.position = OpenPosition(side, qty, self.contract_size, price, time, sl, tp, note, tags)
         if self._on_open:
             self._on_open(self.position)
 
@@ -129,30 +145,30 @@ class Broker:
                 return min(o.price, bar.open)
         return None
 
-    def _manage(self, bar: Candle, subpath: list[Candle]) -> None:
+    def _check_exit(self, c: Candle) -> bool:
         p = self.position
         assert p is not None
-        for c in subpath:
-            if p.side == "long":
-                hit_sl = p.sl is not None and c.low <= p.sl
-                hit_tp = p.tp is not None and c.high >= p.tp
-            else:
-                hit_sl = p.sl is not None and c.high >= p.sl
-                hit_tp = p.tp is not None and c.low <= p.tp
+        if p.side == "long":
+            hit_sl = p.sl is not None and c.low <= p.sl
+            hit_tp = p.tp is not None and c.high >= p.tp
+        else:
+            hit_sl = p.sl is not None and c.high >= p.sl
+            hit_tp = p.tp is not None and c.low <= p.tp
 
-            if hit_sl and hit_tp:
-                # both inside one sub-bar: pessimistic assumes SL first
-                if self.pessimistic:
-                    self._close(p.sl, c.timestamp, "sl")  # type: ignore[arg-type]
-                else:
-                    self._close(p.tp, c.timestamp, "tp")  # type: ignore[arg-type]
-                return
-            if hit_sl:
+        if hit_sl and hit_tp:
+            # both inside one sub-bar: pessimistic assumes SL first
+            if self.pessimistic:
                 self._close(p.sl, c.timestamp, "sl")  # type: ignore[arg-type]
-                return
-            if hit_tp:
+            else:
                 self._close(p.tp, c.timestamp, "tp")  # type: ignore[arg-type]
-                return
+            return True
+        if hit_sl:
+            self._close(p.sl, c.timestamp, "sl")  # type: ignore[arg-type]
+            return True
+        if hit_tp:
+            self._close(p.tp, c.timestamp, "tp")  # type: ignore[arg-type]
+            return True
+        return False
 
     def _close(self, exit_price: float, exit_time: int, reason: str) -> None:
         p = self.position
@@ -165,7 +181,7 @@ class Broker:
             id=f"e{self._seq}", side=p.side, size=p.qty, contractSize=p.contract_size,
             entryPrice=p.entry_price, entryTime=p.entry_time,
             exitPrice=exit_price, exitTime=exit_time, pnl=pnl, reason=reason, risk=risk,
-            sl=p.sl, tp=p.tp,
+            sl=p.sl, tp=p.tp, note=p.note, tags=p.tags,
         )
         self.trades.append(tr)
         self.balance += pnl
