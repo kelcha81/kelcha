@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
 let busy = false; // one packaging job at a time
 
 const SYMBOL_RE = /^[a-z0-9]{1,20}$/; // argv-safe: bare lowercase alphanumerics only
+const INST_RE = /^[A-Za-z0-9_]{1,24}$/; // argv-safe: Dukascopy or OANDA instrument code
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(request: Request) {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'invalid symbol' }, { status: 400 });
     }
     const instArg = instrumentCode == null ? symbol : instrumentCode;
-    if (typeof instArg !== 'string' || !SYMBOL_RE.test(instArg)) {
+    if (typeof instArg !== 'string' || !INST_RE.test(instArg)) {
       return Response.json({ error: 'invalid instrumentCode' }, { status: 400 });
     }
     const precision = pricePrecision == null ? 5 : pricePrecision;

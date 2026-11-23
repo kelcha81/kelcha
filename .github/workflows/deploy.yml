@@ -133,6 +133,8 @@ jobs:
             --execution-environment gen2 \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
+            --set-secrets "OANDA_API_KEY=oanda-api-key:latest" \
+            --set-env-vars "OANDA_CACHE_DIR=/app/public/data/_oandacache" \
             --cpu 1 --memory 1Gi --min-instances 0 --max-instances 4
 
   # Daily candle refresh — keeps the candles bucket current to yesterday so the
@@ -167,5 +169,6 @@ jobs:
             --service-account "data-refresh-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
-            --set-env-vars "DUKASCOPY_CACHE_DIR=/app/public/data/_dukascache,PACKAGE_OUT_DIR=/app/out,GCP_CANDLES_BUCKET=${{ vars.GCP_CANDLES_BUCKET }}" \
-            --tasks 2 --cpu 4 --memory 16Gi --task-timeout 10800 --max-retries 1
+            --set-secrets "OANDA_API_KEY=oanda-api-key:latest" \
+            --set-env-vars "OANDA_CACHE_DIR=/app/public/data/_oandacache,PACKAGE_OUT_DIR=/app/out,GCP_CANDLES_BUCKET=${{ vars.GCP_CANDLES_BUCKET }}" \
+            --tasks 4 --cpu 4 --memory 16Gi --task-timeout 10800 --max-retries 1

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { uploadSymbol } from './upload.js';
 
 // Daily candle refresh (Cloud Run Job). For each symbol, re-pull M1 from
@@ -33,7 +33,11 @@ const TASK_COUNT = Math.max(1, Number(process.env.CLOUD_RUN_TASK_COUNT) || 1);
 
 const ALL_SYMBOLS = JSON.parse(readFileSync(join(HERE, 'instruments.json'), 'utf8'))
   .filter((s) => s.available && (ONLY.length === 0 || ONLY.includes(s.symbol)))
-  .map((s) => ({ symbol: s.symbol, instrument: s.instrumentCode, precision: s.pricePrecision }));
+  .map((s) => ({
+    symbol: s.symbol,
+    instrument: s.oandaInstrument || s.instrumentCode,
+    precision: s.pricePrecision
+  }));
 const SYMBOLS = ALL_SYMBOLS.filter((_, i) => i % TASK_COUNT === TASK_INDEX);
 
 const FROM = process.env.REFRESH_FROM || '2022-01-01';
@@ -108,6 +112,9 @@ async function main() {
           // the previous consistent data — untouched (keep-last-good).
           const uploaded = await uploadSymbol(s.symbol, join(DATA_ROOT, s.symbol), BUCKET);
           console.log(`[${s.symbol}] refreshed — ${checked} verified, ${uploaded} published to ${BUCKET}`);
+          // Free container local disk between symbols when publishing to GCS.
+          await rm(join(DATA_ROOT, s.symbol), { recursive: true, force: true }).catch(() => {});
+          await rm(join(HERE, 'data', `${s.symbol}-m1-${FROM}-to-${TO}.json`), { force: true }).catch(() => {});
         } else {
           console.log(`[${s.symbol}] refreshed — ${checked} files verified (no bucket; wrote ${DATA_ROOT})`);
         }
