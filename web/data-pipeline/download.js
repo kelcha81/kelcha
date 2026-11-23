@@ -150,7 +150,8 @@ async function resolveSupportedInstrument(baseUrl, primary) {
 /** Fetch one month of M1 candles via OANDA count=5000 pagination, using disk cache for past months. */
 async function fetchMonth(baseUrl, instrument, range, cacheCutoffMs) {
   const cacheable = range.isFullMonth && range.to.getTime() <= cacheCutoffMs;
-  const cachePath = join(CACHE_DIR, SYMBOL, `${range.label}.json`);
+  const cacheDirSym = join(CACHE_DIR, 'v2', SYMBOL);
+  const cachePath = join(cacheDirSym, `${range.label}.json`);
 
   if (cacheable) {
     try {
@@ -166,12 +167,9 @@ async function fetchMonth(baseUrl, instrument, range, cacheCutoffMs) {
   const endMs = range.to.getTime();
   const rows = [];
   let cursorSec = Math.floor(range.from.getTime() / 1000);
-  let includeFirst = true;
 
   for (let page = 0; page < 25; page++) {
-    const qs =
-      `granularity=M1&price=${PRICE_CODE}&from=${cursorSec}&count=5000` +
-      `&includeFirst=${includeFirst ? 'true' : 'false'}`;
+    const qs = `granularity=M1&price=${PRICE_CODE}&from=${cursorSec}&count=5000&includeFirst=true`;
     const data = await oandaGet(baseUrl, `/v3/instruments/${encodeURIComponent(instrument)}/candles?${qs}`);
     const batch = Array.isArray(data.candles) ? data.candles : [];
     if (batch.length === 0) break;
@@ -199,13 +197,12 @@ async function fetchMonth(baseUrl, instrument, range, cacheCutoffMs) {
       });
     }
 
-    if (reachedEnd || batch.length < 5000 || lastSec <= cursorSec) break;
-    cursorSec = lastSec;
-    includeFirst = false;
+    if (reachedEnd || batch.length < 5000 || lastSec < cursorSec) break;
+    cursorSec = lastSec + 1;
   }
 
   if (cacheable && rows.length > 0) {
-    await mkdir(join(CACHE_DIR, SYMBOL), { recursive: true }).catch(() => {});
+    await mkdir(cacheDirSym, { recursive: true }).catch(() => {});
     await writeFile(cachePath, JSON.stringify(rows), 'utf8').catch(() => {});
   }
 
