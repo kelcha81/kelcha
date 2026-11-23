@@ -41,12 +41,12 @@ function monthRanges(from, to) {
   return out;
 }
 
-// How many month requests to run at once. Sequential month-by-month is reliable
-// but slow (latency stacks); a handful in parallel cuts wall-clock ~Nx. On the
-// cloud Job the dukascopy tick cache lives on a gcsfuse mount, and too many
-// concurrent writers there triggers 503 / deadline-exceeded on the mount that
-// surface as a month's "Unknown error"; keep the default modest. Tune via env.
-const CONCURRENCY = Number(process.env.ICT_DL_CONCURRENCY) || 2;
+// How many month requests to run at once. On the cloud Job the dukascopy tick
+// cache lives on a gcsfuse mount and multiple tasks share egress, so keep
+// concurrency and per-month batch size modest to avoid Dukascopy 429/resets.
+const CONCURRENCY = Number(process.env.ICT_DL_CONCURRENCY) || 1;
+const BATCH_SIZE = Number(process.env.ICT_DL_BATCH_SIZE) || 4;
+const BATCH_PAUSE_MS = Number(process.env.ICT_DL_BATCH_PAUSE_MS) || 1200;
 
 // Returns the month's rows on success, or null after exhausting its own retries.
 // A single failed month must NOT throw here — one flaky month should not abort
@@ -61,7 +61,10 @@ async function fetchMonth(range) {
         format: 'json',
         useCache: true,
         cacheFolderPath: CACHE_DIR,
+        batchSize: BATCH_SIZE,
+        pauseBetweenBatchesMs: BATCH_PAUSE_MS,
         retryCount: 5,
+        pauseBetweenRetriesMs: 3000,
         retryOnEmpty: false
       });
       return Array.isArray(rows) ? rows : [];

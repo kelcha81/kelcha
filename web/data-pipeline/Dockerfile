@@ -5,7 +5,7 @@
 #   docker build -t data-refresh .   (context = web/data-pipeline)
 FROM node:22-alpine
 WORKDIR /app/data-pipeline
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY . .
 CMD ["node", "refresh.js"]
