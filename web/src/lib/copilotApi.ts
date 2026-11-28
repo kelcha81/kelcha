@@ -1,5 +1,38 @@
 import { getIdToken } from '@/lib/firebase';
 
+export interface IgShadowHealth {
+  status: 'ONLINE' | 'STALE' | 'DISCONNECTED' | 'OFFLINE';
+  connected: boolean;
+  verified_epics: number;
+  total_epics: number;
+  closed_m1_total: number;
+  symbols_active: number;
+  last_flush_at: string;
+  age_seconds: number | null;
+  account_type?: string;
+}
+
+export interface LiveCandleBar {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface LiveCandlesResponse {
+  ok: boolean;
+  symbol: string;
+  tf: string;
+  source: string;
+  count: number;
+  candles: LiveCandleBar[];
+  ig_avg_spread_pips?: number;
+  ig_m1_count?: number;
+  ig_updated_at?: string;
+}
+
 export interface TwinHealth {
   ok: boolean;
   service: string;
@@ -14,6 +47,7 @@ export interface TwinHealth {
   quarantined_anti_patterns: number;
   embeddings_loaded: number;
   copilot_watchlist: number;
+  ig_shadow?: IgShadowHealth;
 }
 
 export interface PromotedRule {
@@ -144,7 +178,7 @@ export interface LiveSignalDoc {
   grade?: string;
   notified?: boolean;
   user_action?: string;
-  telemetry?: { entry?: number; sl?: number; tp?: number; rr?: number };
+  telemetry?: { entry?: number; sl?: number; tp?: number; rr?: number; sweep_level?: number };
   review?: ReviewResult;
 }
 
@@ -177,6 +211,7 @@ export interface DeskSnapshot {
   account_mode: string;
   stream_b_shadow: boolean;
   playbook_version: string;
+  ig_shadow?: IgShadowHealth;
   dual_equity: Record<string, unknown>;
   signals: LiveSignalDoc[];
   forecasts: ForecastDoc[];
@@ -238,6 +273,10 @@ export const copilotApi = {
       payload
     ),
   signals: () => twinFetch<DeskSnapshot>('signals'),
+  liveCandles: (symbol: string, tf: 'm5' | 'm15' | 'h1' | 'h4' | 'd1' = 'm15', count = 240) =>
+    twinFetch<LiveCandlesResponse>(
+      `live-candles?symbol=${encodeURIComponent(symbol.toLowerCase())}&tf=${encodeURIComponent(tf)}&count=${count}`
+    ),
   signalAction: (signal_id: string, action: 'took' | 'skip' | 'win' | 'loss') =>
     twinFetch<{ ok: boolean; signal_id: string; user_action: string; draft_id?: string }>(
       'signal-action',
