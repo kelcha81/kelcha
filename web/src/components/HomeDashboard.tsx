@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { Plus, Play, Trash2, Copy, Search } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Plus, Play, Trash2, Copy, Search, Radio, Activity } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTradingStore, DEFAULT_ACCOUNT } from '@/store/tradingStore';
 import { computeStats } from '@/lib/performance';
+import { copilotApi, type DeskSnapshot, type LiveSignalDoc } from '@/lib/copilotApi';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
+import { LiveRadarChartBoard } from '@/components/LiveRadarChartBoard';
 import { confirm } from '@/components/ui/confirm';
 import { Tooltip } from '@/components/ui/tooltip';
 
@@ -35,6 +37,62 @@ export function HomeDashboard() {
   const [newOpen, setNewOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('recent');
+  const [deskSnap, setDeskSnap] = useState<DeskSnapshot | null>(null);
+  const [activeLiveSignal, setActiveLiveSignal] = useState<LiveSignalDoc | null>(null);
+  const [activeLivePair, setActiveLivePair] = useState<{ symbol: string; title?: string; notes?: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const radarId = params?.get('radar') || '';
+    const pairParam = params?.get('pair') || '';
+
+    (async () => {
+      try {
+        const snap = await copilotApi.signals();
+        if (cancelled) return;
+        setDeskSnap(snap);
+        if (radarId) {
+          const hit = snap.signals.find((s) => s.signal_id === radarId || s.trade_id === radarId);
+          if (hit) setActiveLiveSignal(hit);
+        } else if (pairParam) {
+          setActiveLivePair({ symbol: pairParam.toUpperCase(), title: `${pairParam.toUpperCase()} Live Forecast` });
+        }
+      } catch {
+        /* ignore if unauthenticated or twin cold */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (activeLiveSignal || activeLivePair) {
+    return (
+      <LiveRadarChartBoard
+        signal={activeLiveSignal}
+        fallbackSymbol={activeLivePair?.symbol}
+        fallbackTitle={activeLivePair?.title}
+        fallbackNotes={activeLivePair?.notes}
+        onBack={() => {
+          setActiveLiveSignal(null);
+          setActiveLivePair(null);
+          if (typeof window !== 'undefined' && window.location.search) {
+            window.history.replaceState({}, '', '/');
+          }
+        }}
+        onSignalUpdated={() => {
+          copilotApi.signals().then(setDeskSnap).catch(() => {});
+        }}
+      />
+    );
+  }
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const allSignals = deskSnap?.signals || [];
+  const todaySignals = allSignals.filter((s) => (s.date || s.created_at || '').startsWith(todayUtc));
+  const shownSignals = todaySignals.length > 0 ? todaySignals : allSignals.slice(0, 6);
+  const igHealth = deskSnap?.ig_shadow;
 
   const sessions = tabs
     .map((t) => {
@@ -59,12 +117,96 @@ export function HomeDashboard() {
   const winRate = totalTrades ? (totalWins / totalTrades) * 100 : 0;
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Backtesting Dashboard</h1>
-          <p className="text-sm text-slate-400">Your replay sessions and performance.</p>
+    <div className="mx-auto w-full max-w-6xl space-y-8 p-6">
+      {/* SECTION 1: Co-Pilot Ephemeral Live Boards (Visual Chart Hub Slice 1) */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
+              <Radio className="h-4 w-4 text-emerald-400" />
+              Co-Pilot Live Boards
+              <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-normal text-slate-400">
+                {todaySignals.length > 0 ? `Today (${todayUtc})` : 'Recent Radar Signals'} · Ephemeral
+              </span>
+            </h1>
+            <p className="text-xs text-slate-400">
+              Click any Radar signal to inspect live intraday candles, Entry/SL/TP brackets, and Option-1 rubric conviction on chart.
+            </p>
+          </div>
+          {igHealth && (
+            <div
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                igHealth.status === 'ONLINE'
+                  ? 'border-emerald-500/30 bg-emerald-950/30 text-emerald-300'
+                  : igHealth.status === 'STALE'
+                    ? 'border-amber-500/40 bg-amber-950/30 text-amber-300'
+                    : 'border-rose-500/40 bg-rose-950/30 text-rose-300'
+              }`}
+            >
+              <Activity className="h-3.5 w-3.5" />
+              IG Shadow: {igHealth.status} ({igHealth.verified_epics}/{igHealth.total_epics} EPICs)
+            </div>
+          )}
         </div>
+
+        {shownSignals.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/30 p-6 text-center text-xs text-slate-400">
+            No live Radar setups yet today. Signals will appear here automatically during London &amp; NY Killzones.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {shownSignals.map((sig) => (
+              <div
+                key={sig.signal_id}
+                className="flex flex-col justify-between rounded-lg border border-slate-800 bg-slate-900/50 p-3.5 transition hover:border-sky-500/50"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold text-slate-100">
+                      {sig.symbol} · {sig.tf}
+                    </span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                        sig.direction === 'BULL'
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-rose-500/20 text-rose-300'
+                      }`}
+                    >
+                      {sig.direction}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>{sig.verdict} (Grade {sig.grade || '?'})</span>
+                    <span className="font-mono">{sig.date || ''}</span>
+                  </div>
+                  {sig.telemetry?.entry !== undefined && (
+                    <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px] text-slate-300">
+                      <span className="text-sky-300">E: {sig.telemetry.entry}</span>
+                      <span className="text-rose-400">SL: {sig.telemetry.sl}</span>
+                      <span className="text-emerald-400">TP: {sig.telemetry.tp}</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveLiveSignal(sig)}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded bg-sky-600/20 py-1.5 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30 hover:bg-sky-600 hover:text-white"
+                >
+                  <Play className="h-3.5 w-3.5" /> Open Live Chart
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* SECTION 2: Manual Replay Sessions */}
+      <section className="border-t border-slate-800/80 pt-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Manual Replay Sessions</h2>
+            <p className="text-xs text-slate-400">Your persistent historical replay sessions and paper performance.</p>
+          </div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
@@ -174,6 +316,7 @@ export function HomeDashboard() {
           ))}
         </div>
       )}
+      </section>
 
       {newOpen && <NewSessionDialog onClose={() => setNewOpen(false)} />}
     </div>

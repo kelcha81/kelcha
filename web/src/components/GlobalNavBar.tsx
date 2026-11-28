@@ -116,6 +116,33 @@ export function GlobalNavBar() {
               </span>
             </div>
 
+            {health?.ig_shadow && (
+              <Link
+                href="/desk"
+                title={`IG UK Spread Bet Shadow: ${health.ig_shadow.status} (${health.ig_shadow.verified_epics}/${health.ig_shadow.total_epics} EPICs, ${health.ig_shadow.closed_m1_total} M1 bars)`}
+                className={`hidden items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] 2xl:flex ${
+                  health.ig_shadow.status === 'ONLINE'
+                    ? 'border-emerald-500/30 bg-emerald-950/30 text-emerald-300'
+                    : health.ig_shadow.status === 'STALE'
+                      ? 'border-amber-500/40 bg-amber-950/30 text-amber-300'
+                      : 'border-rose-500/40 bg-rose-950/30 text-rose-300'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    health.ig_shadow.status === 'ONLINE'
+                      ? 'bg-emerald-400'
+                      : health.ig_shadow.status === 'STALE'
+                        ? 'bg-amber-400'
+                        : 'bg-rose-400'
+                  }`}
+                />
+                <span>
+                  IG {health.ig_shadow.status} · {health.ig_shadow.verified_epics}/{health.ig_shadow.total_epics}
+                </span>
+              </Link>
+            )}
+
             {pathname !== '/chat' && (
               <button
                 type="button"

@@ -8,7 +8,7 @@ const TWIN_BASE = (
   process.env.TWIN_API_URL || 'https://ict-trading-twin-gape75dzxq-nw.a.run.app'
 ).replace(/\/+$/, '');
 
-const ALLOWED_GET = new Set(['health', 'cases', 'signals', 'proposals', 'playbook', 'hypotheses', 'metrics']);
+const ALLOWED_GET = new Set(['health', 'cases', 'signals', 'proposals', 'playbook', 'hypotheses', 'metrics', 'live-candles']);
 const ALLOWED_POST = new Set(['ask', 'review', 'upload-lesson', 'hypotheses', 'signal-action', 'reload']);
 
 async function forward(req: Request, pathSegs: string[], method: 'GET' | 'POST') {

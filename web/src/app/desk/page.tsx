@@ -1,8 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
+  CandlestickChart,
   CheckCircle2,
   Loader2,
   MessageSquare,
@@ -137,6 +139,34 @@ export default function LiveDeskPage() {
         </div>
       </div>
 
+      {/* IG Lightstreamer Shadow Feed Health Banner */}
+      {snap?.ig_shadow && (
+        <div
+          className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs ${
+            snap.ig_shadow.status === 'ONLINE'
+              ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-200'
+              : snap.ig_shadow.status === 'STALE'
+                ? 'border-amber-500/40 bg-amber-950/25 text-amber-200'
+                : 'border-rose-500/40 bg-rose-950/25 text-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            <span className="font-semibold">
+              IG UK Spread Bet Shadow Feed: {snap.ig_shadow.status}
+            </span>
+            <span className="font-mono text-[11px] opacity-80">
+              ({snap.ig_shadow.verified_epics}/{snap.ig_shadow.total_epics} EPICs · {snap.ig_shadow.closed_m1_total} M1 bars)
+            </span>
+          </div>
+          <span className="font-mono text-[11px] opacity-80">
+            {snap.ig_shadow.last_flush_at
+              ? `Last heartbeat: ${snap.ig_shadow.last_flush_at}`
+              : 'Waiting for first heartbeat'}
+          </span>
+        </div>
+      )}
+
       {loading && !snap ? (
         <div className="flex items-center gap-2 py-12 text-sm text-slate-400">
           <Loader2 className="h-4 w-4 animate-spin text-sky-400" /> Loading Live Desk…
@@ -173,9 +203,17 @@ export default function LiveDeskPage() {
                       <div key={idx} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
                         <div className="mb-1 flex items-center justify-between">
                           <span className="font-mono text-sm font-semibold text-sky-300">{idea.pair}</span>
-                          <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-medium text-indigo-200">
-                            {idea.bias}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-medium text-indigo-200">
+                              {idea.bias}
+                            </span>
+                            <Link
+                              href={`/?pair=${encodeURIComponent(idea.pair)}`}
+                              className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-600/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300 hover:bg-sky-600 hover:text-white"
+                            >
+                              <CandlestickChart className="h-3 w-3" /> Chart
+                            </Link>
+                          </div>
                         </div>
                         {idea.narrative && <p className="mb-1.5 text-slate-300">{idea.narrative}</p>}
                         <div className="space-y-0.5 text-[11px] text-slate-400">
@@ -295,25 +333,33 @@ export default function LiveDeskPage() {
                             })}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openDrawer({
-                                context: {
-                                  kind: 'live_signal',
-                                  label: `${sig.symbol} ${sig.direction} (${sig.trade_id || sig.date})`,
-                                  symbol: sig.symbol,
-                                  timeframe: sig.tf,
-                                  tradeId: sig.trade_id || sig.signal_id,
-                                  summary: sig.review?.actionable_plan,
-                                },
-                                prefill: `Walk me through why Co-Pilot graded ${sig.symbol} ${sig.direction} as ${sig.verdict}.`,
-                              })
-                            }
-                            className="inline-flex items-center gap-1 text-[11px] text-indigo-300 hover:underline"
-                          >
-                            <MessageSquare className="h-3 w-3" /> Ask Co-Pilot
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <Link
+                              href={`/?radar=${encodeURIComponent(sig.signal_id)}`}
+                              className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-600/15 px-2 py-1 text-[11px] font-medium text-sky-300 hover:bg-sky-600 hover:text-white"
+                            >
+                              <CandlestickChart className="h-3 w-3" /> View on Chart
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openDrawer({
+                                  context: {
+                                    kind: 'live_signal',
+                                    label: `${sig.symbol} ${sig.direction} (${sig.trade_id || sig.date})`,
+                                    symbol: sig.symbol,
+                                    timeframe: sig.tf,
+                                    tradeId: sig.trade_id || sig.signal_id,
+                                    summary: sig.review?.actionable_plan,
+                                  },
+                                  prefill: `Walk me through why Co-Pilot graded ${sig.symbol} ${sig.direction} as ${sig.verdict}.`,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 text-[11px] text-indigo-300 hover:underline"
+                            >
+                              <MessageSquare className="h-3 w-3" /> Ask Co-Pilot
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
