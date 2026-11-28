@@ -35,11 +35,13 @@ const TF_BUTTONS: { tf: BtTf; label: string }[] = [
 export function BacktestVisualHubBoard({
   runId,
   initialSymbol,
+  initialTradeId,
   runs,
   onBack,
 }: {
   runId: string;
   initialSymbol?: string;
+  initialTradeId?: string;
   runs: BacktestRunSummary[];
   onBack: () => void;
 }) {
@@ -75,8 +77,11 @@ export function BacktestVisualHubBoard({
         if (cancelled) return;
         setArtifact(res);
         setArtErr(null);
-        const first = res.trades?.[0]?.trade_id ?? null;
-        setSelectedTradeId(first);
+        const preferred =
+          initialTradeId && res.trades?.some((t) => t.trade_id === initialTradeId)
+            ? initialTradeId
+            : res.trades?.[0]?.trade_id ?? null;
+        setSelectedTradeId(preferred);
       } catch (e) {
         if (!cancelled) {
           setArtifact(null);
@@ -90,7 +95,7 @@ export function BacktestVisualHubBoard({
     return () => {
       cancelled = true;
     };
-  }, [runId, symbol]);
+  }, [runId, symbol, initialTradeId]);
 
   const filteredTrades = useMemo(() => {
     const list = artifact?.trades || [];

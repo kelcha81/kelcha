@@ -269,6 +269,73 @@ export interface BacktestRunSymbolArtifact {
   trades: VisualBacktestTrade[];
 }
 
+export interface CompactModelTrade {
+  trade_id: string;
+  symbol: string;
+  entry_time: number;
+  exit_time: number;
+  date: string;
+  year: number;
+  month: number;
+  ym: string;
+  direction: 'BULL' | 'BEAR';
+  entry?: number;
+  sl?: number;
+  tp?: number;
+  r_08: number;
+  r_12: number;
+  outcome: 'WIN' | 'LOSS';
+  vetoed?: boolean;
+}
+
+export interface PersonalAsrRecord {
+  case_id: string;
+  symbol: string;
+  date: string;
+  year: number;
+  month: number;
+  ym: string;
+  direction: string;
+  outcome: 'WIN' | 'LOSS' | 'BE' | 'UNKNOWN';
+  pnl_r: number | null;
+  process_bucket: string;
+  setup_grade?: string;
+  do_not_imitate?: boolean;
+  key_rule_takeaway?: string;
+}
+
+export interface BacktestRunAllTradesResponse {
+  ok: boolean;
+  run_id: string;
+  run: BacktestRunSummary;
+  trade_count: number;
+  asr_count: number;
+  trades: CompactModelTrade[];
+  personal_asrs: PersonalAsrRecord[];
+}
+
+export interface DataStudioSchema {
+  ok: boolean;
+  engine: string;
+  runs: BacktestRunSummary[];
+  counts: { model_trades: number; personal_asrs: number; live_signals: number };
+  tables: Record<string, string[]>;
+}
+
+export interface DataStudioQueryResponse {
+  ok: boolean;
+  engine: string;
+  sql: string;
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  row_count: number;
+  truncated: boolean;
+  elapsed_ms: number;
+  explanation?: string;
+  chart_hint?: string;
+  model_used?: string;
+}
+
 export interface DeskSnapshot {
   ok: boolean;
   account_mode: string;
@@ -345,6 +412,14 @@ export const copilotApi = {
     twinFetch<BacktestRunSymbolArtifact>(
       `backtest-runs?run_id=${encodeURIComponent(runId)}&symbol=${encodeURIComponent(symbol.toLowerCase())}`
     ),
+  backtestRunAllTrades: (runId: string) =>
+    twinFetch<BacktestRunAllTradesResponse>(
+      `backtest-runs?run_id=${encodeURIComponent(runId)}&all_trades=1`
+    ),
+  dataSchema: (refresh = false) =>
+    twinFetch<DataStudioSchema>(`data/schema${refresh ? '?refresh=1' : ''}`),
+  dataQuery: (payload: { sql?: string; question?: string; run_id?: string; max_rows?: number; refresh?: boolean }) =>
+    twinFetch<DataStudioQueryResponse>('data/query', 'POST', payload),
   signalAction: (signal_id: string, action: 'took' | 'skip' | 'win' | 'loss') =>
     twinFetch<{ ok: boolean; signal_id: string; user_action: string; draft_id?: string }>(
       'signal-action',

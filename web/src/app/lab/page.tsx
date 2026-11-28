@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  BarChart3,
   CandlestickChart,
   Database,
   FlaskConical,
@@ -211,14 +212,23 @@ export default function QuantLabPage() {
                   Flags pairs negative in both IS & Blind OOS (`USDCAD`, `XAUUSD`, `AUDJPY`) so single-instrument drags never hide broad edges.
                 </p>
               </div>
-              <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={exclDrags}
-                  onChange={(e) => setExclDrags(e.target.checked)}
-                />
-                Sandbox: Excl. 3 Both-Split Drags (15 pairs)
-              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href="/data?run=v5_18pair_baseline"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-600/15 px-2.5 py-1.5 text-xs font-medium text-sky-300 hover:bg-sky-600 hover:text-white"
+                >
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Query &amp; Compare in Data Studio
+                </Link>
+                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={exclDrags}
+                    onChange={(e) => setExclDrags(e.target.checked)}
+                  />
+                  Sandbox: Excl. 3 Both-Split Drags (15 pairs)
+                </label>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
