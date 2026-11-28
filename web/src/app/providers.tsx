@@ -6,12 +6,14 @@ import { AuthProvider } from '@/lib/auth';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ConfirmHost } from '@/components/ui/confirm';
 import { ShortcutHelp } from '@/components/ShortcutHelp';
+import { CopilotChatDrawer } from '@/components/CopilotChatDrawer';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       <TooltipProvider>
         {children}
+        <CopilotChatDrawer />
         <ConfirmHost />
         <ShortcutHelp />
         <Toaster
