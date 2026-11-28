@@ -7,12 +7,18 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ConfirmHost } from '@/components/ui/confirm';
 import { ShortcutHelp } from '@/components/ShortcutHelp';
 import { CopilotChatDrawer } from '@/components/CopilotChatDrawer';
+import { GlobalNavBar } from '@/components/GlobalNavBar';
+import { SettingsSync } from '@/components/SettingsSync';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       <TooltipProvider>
-        {children}
+        <div className="flex min-h-screen flex-col bg-[#0b0f14] text-slate-100">
+          <GlobalNavBar />
+          <SettingsSync />
+          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        </div>
         <CopilotChatDrawer />
         <ConfirmHost />
         <ShortcutHelp />

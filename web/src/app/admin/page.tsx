@@ -100,13 +100,10 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0f14] p-6 text-slate-200">
+    <div className="w-full flex-1 bg-[#0b0f14] p-6 text-slate-200">
       <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-semibold">Admin · Accounts</h1>
-          <Link href="/" className="text-xs text-sky-400 hover:underline">
-            ← Back to app
-          </Link>
         </div>
 
         <form onSubmit={createUser} className="mb-6 flex flex-wrap items-end gap-2 rounded border border-slate-800 bg-slate-900/50 p-3">

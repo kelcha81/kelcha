@@ -1,16 +1,12 @@
 import { AppRoot } from '@/components/AppRoot';
 import { AuthGate } from '@/components/AuthGate';
-import { AccountBar } from '@/components/AccountBar';
-import { SettingsSync } from '@/components/SettingsSync';
 import { WorkspaceSync } from '@/components/WorkspaceSync';
 import { DrawingsSync } from '@/components/DrawingsSync';
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#0b0f14] text-slate-100">
+    <main className="flex min-h-0 flex-1 flex-col bg-[#0b0f14] text-slate-100">
       <AuthGate>
-        <AccountBar />
-        <SettingsSync />
         <WorkspaceSync />
         <DrawingsSync />
         <AppRoot />
