@@ -52,7 +52,7 @@ export function HomeDashboard() {
     session?: string;
   } | null>(null);
   const [activeLivePair, setActiveLivePair] = useState<{ symbol: string; title?: string; notes?: string } | null>(null);
-  const [activeBacktest, setActiveBacktest] = useState<{ runId: string; symbol?: string } | null>(null);
+  const [activeBacktest, setActiveBacktest] = useState<{ runId: string; symbol?: string; tradeId?: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +62,7 @@ export function HomeDashboard() {
     const pairParam = params?.get('pair') || '';
     const btRun = params?.get('backtest') || '';
     const btSym = params?.get('symbol') || '';
+    const btTrade = params?.get('trade') || '';
 
     (async () => {
       try {
@@ -74,7 +75,7 @@ export function HomeDashboard() {
         if (btRes?.runs) setBacktestRuns(btRes.runs);
 
         if (btRun) {
-          setActiveBacktest({ runId: btRun, symbol: btSym || undefined });
+          setActiveBacktest({ runId: btRun, symbol: btSym || undefined, tradeId: btTrade || undefined });
         } else if (radarId && snap) {
           const hit = snap.signals.find((s) => s.signal_id === radarId || s.trade_id === radarId);
           if (hit) setActiveLiveSignal(hit);
@@ -105,6 +106,7 @@ export function HomeDashboard() {
       <BacktestVisualHubBoard
         runId={activeBacktest.runId}
         initialSymbol={activeBacktest.symbol}
+        initialTradeId={activeBacktest.tradeId}
         runs={backtestRuns}
         onBack={() => {
           setActiveBacktest(null);

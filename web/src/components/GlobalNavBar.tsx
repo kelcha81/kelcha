@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
+  BarChart3,
   Brain,
   CandlestickChart,
   FlaskConical,
@@ -22,9 +23,9 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 const NAV_ITEMS = [
   { href: '/', label: 'Chart Desk', Icon: CandlestickChart },
   { href: '/desk', label: 'Live Desk', Icon: Radio },
-  { href: '/knowledge', label: 'Knowledge (L0–L5)', Icon: Brain },
   { href: '/lab', label: 'Quant Lab', Icon: FlaskConical },
-  { href: '/chat', label: 'Co-Pilot Chat', Icon: MessageSquare },
+  { href: '/data', label: 'Data Studio', Icon: BarChart3 },
+  { href: '/knowledge', label: 'Knowledge (L0–L5)', Icon: Brain },
 ];
 
 export function GlobalNavBar() {

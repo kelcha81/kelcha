@@ -6,6 +6,7 @@ import {
   Activity,
   CandlestickChart,
   CheckCircle2,
+  FileDown,
   Loader2,
   MessageSquare,
   Radio,
@@ -16,6 +17,7 @@ import {
 import { toast } from 'sonner';
 import { CopilotNavShell } from '@/components/CopilotNavShell';
 import { copilotApi, type DeskSnapshot, type LiveSignalDoc } from '@/lib/copilotApi';
+import { buildCopilotAsrMarkdown, downloadMarkdownFile } from '@/lib/obsidian/asr';
 import { useCopilotStore } from '@/store/copilotStore';
 
 export default function LiveDeskPage() {
@@ -333,7 +335,39 @@ export default function LiveDeskPage() {
                             })}
                           </div>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const { filename, markdown } = buildCopilotAsrMarkdown({
+                                  date: sig.date || new Date().toISOString().slice(0, 10),
+                                  symbol: sig.symbol,
+                                  direction: sig.direction,
+                                  tf: sig.tf,
+                                  entry: sig.telemetry?.entry,
+                                  sl: sig.telemetry?.sl,
+                                  tp: sig.telemetry?.tp,
+                                  pnlR:
+                                    sig.user_action === 'win' && sig.telemetry?.rr
+                                      ? Number(sig.telemetry.rr)
+                                      : sig.user_action === 'loss'
+                                        ? -1
+                                        : null,
+                                  setupGrade: sig.grade || sig.review?.grade,
+                                  verdict: sig.verdict || sig.review?.verdict,
+                                  outcome: sig.user_action || '',
+                                  signalId: sig.signal_id,
+                                  thesis: sig.review?.entry_sentence,
+                                  actionPlan: sig.review?.actionable_plan,
+                                });
+                                downloadMarkdownFile(filename, markdown);
+                                toast.success(`Downloaded ${filename} for Obsidian Trades/ASR/`);
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-600/15 px-2 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-600 hover:text-white"
+                              title="Download canonical Gen-3 Daily ASR (.md) ready for Obsidian import"
+                            >
+                              <FileDown className="h-3 w-3" /> Obsidian ASR (.md)
+                            </button>
                             <Link
                               href={`/?radar=${encodeURIComponent(sig.signal_id)}`}
                               className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-600/15 px-2 py-1 text-[11px] font-medium text-sky-300 hover:bg-sky-600 hover:text-white"

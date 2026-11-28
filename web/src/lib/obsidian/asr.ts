@@ -78,26 +78,30 @@ backtest_performed_date:
 ---
 ${ASR_BODY}`;
 
-// Daily ASR (Trade Type: Live) — for forward-test / live trades. Same body; no
-// backtest_* date fields. Mirrors the plugin's BUILT_IN_DAILY_ASR_TEMPLATE.
+// Daily ASR (Trade Type: Live) — Gen-3 Obsidian template matching Daily ASR Template.md.
 export const BUILT_IN_DAILY_ASR_TEMPLATE = `---
 date:
 Pairing:
-Document type: Daily ASR
+Document type:
+  - Daily ASR
 Trade Type: Live
 direction:
+Account %:
+pnl_r:
 killzone:
 entry:
 sl:
+tp:
 po3_phase:
 setup_grade:
 confidence:
-pnl_pips:
 outcome:
-trade_indicators: []
-forecast_link:
 missed_reason:
 missed_valid:
+backtest_performed_date:
+trade_indicators: []
+forecast_link:
+copilot_signal_id:
 ---
 ${ASR_BODY}`;
 
@@ -130,9 +134,153 @@ function isoOf(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+const NON_SLASH_PAIRS = new Set([
+  'US30',
+  'US500',
+  'NAS100',
+  'GER40',
+  'UK100',
+  'XAUUSD',
+  'XAGUSD',
+  'SPX500',
+  'NDX100',
+]);
+
 export function formatPairForProperty(pair: string): string {
   const compact = pair.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  return compact.length === 6 ? `${compact.slice(0, 3)}/${compact.slice(3)}` : compact;
+  if (compact.length === 6 && !NON_SLASH_PAIRS.has(compact) && /^[A-Z]{6}$/.test(compact)) {
+    return `${compact.slice(0, 3)}/${compact.slice(3)}`;
+  }
+  return compact;
+}
+
+export interface CopilotAsrExportInput {
+  date: string;
+  symbol: string;
+  direction?: string;
+  tf?: string;
+  killzone?: string;
+  entry?: number | string | null;
+  sl?: number | string | null;
+  tp?: number | string | null;
+  pnlR?: number | null;
+  setupGrade?: string;
+  verdict?: string;
+  outcome?: string;
+  signalId?: string;
+  thesis?: string;
+  actionPlan?: string;
+  indicators?: string[];
+}
+
+/** Build a canonical Gen-3 Daily ASR `.md` file + filename (`YYYY-MM-DD SYMBOL ASR.md`)
+ *  ready for direct drop-in import into Kelvin's Obsidian `Trades/ASR/` vault folder. */
+export function buildCopilotAsrMarkdown(input: CopilotAsrExportInput): { filename: string; markdown: string } {
+  const dateISO = (input.date || isoToday()).slice(0, 10);
+  const sym = compactPair(input.symbol || 'UNKNOWN') || 'UNKNOWN';
+  const pairFmt = formatPairForProperty(sym);
+  const rawDir = (input.direction || '').toUpperCase();
+  const dirLabel =
+    rawDir === 'BULL' || rawDir === 'BULLISH' || rawDir === 'LONG' || rawDir === 'BUY'
+      ? 'Bullish'
+      : rawDir === 'BEAR' || rawDir === 'BEARISH' || rawDir === 'SHORT' || rawDir === 'SELL'
+        ? 'Bearish'
+        : '';
+
+  const rawOut = (input.outcome || '').toUpperCase();
+  const outLabel =
+    rawOut === 'WIN'
+      ? 'Win'
+      : rawOut === 'LOSS'
+        ? 'Loss'
+        : rawOut === 'BE' || rawOut === 'BREAK EVEN'
+          ? 'Break Even'
+          : rawOut === 'SKIP' || rawOut === 'MISSED' || rawOut === 'MISSED TRADE'
+            ? 'Missed Trade'
+            : '';
+
+  const pnlRStr = input.pnlR !== undefined && input.pnlR !== null && !Number.isNaN(input.pnlR)
+    ? input.pnlR.toFixed(2)
+    : '';
+  const entryQ = input.entry !== undefined && input.entry !== null && input.entry !== '' ? `"${input.entry}"` : '';
+  const slQ = input.sl !== undefined && input.sl !== null && input.sl !== '' ? `"${input.sl}"` : '';
+  const tpQ = input.tp !== undefined && input.tp !== null && input.tp !== '' ? `"${input.tp}"` : '';
+  const fcLink = /^\d{4}-\d{2}-\d{2}$/.test(dateISO) ? `Daily Forecast ${sym}-${ddmmyyyy(dateISO)}` : '';
+  const indList = (input.indicators || []).filter(Boolean);
+  const indYaml = indList.length
+    ? `trade_indicators:\n${indList.map((x) => `  - ${x}`).join('\n')}`
+    : 'trade_indicators: []';
+
+  const markdown = `---
+date: ${dateISO}
+Pairing:
+  - ${pairFmt}
+Document type:
+  - Daily ASR
+Trade Type: Live
+direction: ${dirLabel}
+Account %:
+pnl_r: ${pnlRStr}
+killzone: ${input.killzone || ''}
+entry: ${entryQ}
+sl: ${slQ}
+tp: ${tpQ}
+po3_phase:
+setup_grade: ${input.setupGrade || ''}
+confidence:
+outcome: ${outLabel}
+missed_reason:
+missed_valid:
+backtest_performed_date:
+${indYaml}
+forecast_link: "${fcLink}"
+copilot_signal_id: "${input.signalId || ''}"
+---
+
+<!-- Naming convention: YYYY-MM-DD [PAIR] ASR.md  (e.g. ${dateISO} ${sym} ASR.md) -->
+
+# Entry
+
+## Daily / Timeframe
+
+> **Co-Pilot Pre-Trade Thesis (${input.verdict || 'RADAR'} · Grade ${input.setupGrade || '—'} · ${(input.tf || 'M15').toUpperCase()}):**
+> ${input.thesis || ''}
+
+- **Action Plan:** ${input.actionPlan || ''}
+
+# Post-entry
+
+---
+
+## M15 / Timeframe
+
+-
+
+
+# Reflections
+
+---
+
+### What went well
+
+1.
+
+### What can I improve on
+
+1.
+`;
+
+  return { filename: `${dateISO} ${sym} ASR.md`, markdown };
+}
+
+export function downloadMarkdownFile(filename: string, markdown: string): void {
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function compactPair(pair: string): string {
