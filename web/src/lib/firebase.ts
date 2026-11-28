@@ -5,12 +5,12 @@ import { getAuth, type Auth } from 'firebase/auth';
 // Firebase web app's client bundle by design; access is controlled by Firebase
 // Auth + Firestore security rules, not by hiding this config.
 const firebaseConfig = {
-  apiKey: 'AIzaSyCMWRmK_m7m-hLG2V6jrU8-Gyr4rAA7-tA',
-  authDomain: 'lc-trading.firebaseapp.com',
-  projectId: 'lc-trading',
-  storageBucket: 'lc-trading.firebasestorage.app',
-  messagingSenderId: '669864201745',
-  appId: '1:669864201745:web:bd5309330108d7b3e76bb0'
+  apiKey: 'AIzaSyCvi_EO5QszajBRaN0uonEuFZtVd9jOses',
+  authDomain: 'co-pilot-516023.firebaseapp.com',
+  projectId: 'co-pilot-516023',
+  storageBucket: 'co-pilot-516023.firebasestorage.app',
+  messagingSenderId: '416980317465',
+  appId: '1:416980317465:web:e45fff8cd1af1d2447c188',
 };
 
 let _auth: Auth | undefined;
