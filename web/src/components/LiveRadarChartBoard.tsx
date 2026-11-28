@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { init, dispose, type Chart, type KLineData } from 'klinecharts';
+import { init, dispose, LineType, type Chart, type KLineData } from 'klinecharts';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -168,7 +168,7 @@ export function LiveRadarChartBoard({
           line: {
             color: lvl.color,
             size: 1.5,
-            style: lvl.dashed ? 'dashed' : 'solid',
+            style: lvl.dashed ? LineType.Dashed : LineType.Solid,
           },
         },
       });
