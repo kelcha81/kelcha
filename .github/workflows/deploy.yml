@@ -133,8 +133,8 @@ jobs:
             --execution-environment gen2 \
             --add-volume "name=candles,type=cloud-storage,bucket=${{ vars.GCP_CANDLES_BUCKET }}" \
             --add-volume-mount "volume=candles,mount-path=/app/public/data" \
-            --set-secrets "OANDA_API_KEY=oanda-api-key:latest" \
-            --set-env-vars "OANDA_CACHE_DIR=/app/public/data/_oandacache" \
+            --set-secrets "OANDA_API_KEY=oanda-api-key:latest,TWIN_SECRET=twin-secret:latest" \
+            --set-env-vars "OANDA_CACHE_DIR=/app/public/data/_oandacache,TWIN_API_URL=https://ict-trading-twin-gape75dzxq-nw.a.run.app" \
             --cpu 1 --memory 1Gi --min-instances 0 --max-instances 4
 
   # Daily candle refresh — keeps the candles bucket current to yesterday so the
