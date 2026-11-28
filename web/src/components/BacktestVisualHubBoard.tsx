@@ -16,10 +16,21 @@ import {
 } from '@/lib/copilotApi';
 import { getRange } from '@/lib/candleSource';
 import { getSymbolInfo } from '@/lib/symbols';
+import { buildKlineChartStyles } from '@/lib/chartThemeStyles';
+import { registerIctTradeBox, ICT_TRADE_BOX } from '@/lib/overlays/ictTradeBox';
+import { registerIctBox, ICT_BOX } from '@/lib/overlays/ictBox';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useCopilotStore } from '@/store/copilotStore';
 
-type BtTf = 'm15' | 'h1' | 'h4';
+type BtTf = 'm5' | 'm15' | 'h1' | 'h4';
 type TradeFilter = 'all' | 'win' | 'loss' | 'vetoed';
+
+const TF_BUTTONS: { tf: BtTf; label: string }[] = [
+  { tf: 'm5', label: '5m' },
+  { tf: 'm15', label: '15m' },
+  { tf: 'h1', label: '1H' },
+  { tf: 'h4', label: '4H' },
+];
 
 export function BacktestVisualHubBoard({
   runId,
@@ -33,6 +44,8 @@ export function BacktestVisualHubBoard({
   onBack: () => void;
 }) {
   const openDrawer = useCopilotStore((s) => s.openDrawer);
+  const theme = useSettingsStore((s) => s.theme);
+  const timezone = useSettingsStore((s) => s.timezone);
   const runMeta = runs.find((r) => r.run_id === runId);
   const defaultSym = (initialSymbol || runMeta?.symbols?.[0]?.symbol || 'EURJPY').toUpperCase();
 
@@ -94,28 +107,19 @@ export function BacktestVisualHubBoard({
     return filteredTrades.find((t) => t.trade_id === selectedTradeId) || filteredTrades[0];
   }, [filteredTrades, selectedTradeId]);
 
-  // Init KLineChart once
+  // Init KLineChart once & register TradingView-style R:R Zone + ICT Box overlays
   useEffect(() => {
+    registerIctTradeBox();
+    registerIctBox();
     const el = containerRef.current;
     if (!el) return;
+    const curTheme = useSettingsStore.getState().theme;
+    const curTz = useSettingsStore.getState().timezone;
     const chart = init(el, {
-      styles: {
-        grid: { horizontal: { color: '#1e293b' }, vertical: { color: '#1e293b' } },
-        candle: {
-          bar: {
-            upColor: '#10b981',
-            downColor: '#f43f5e',
-            upBorderColor: '#10b981',
-            downBorderColor: '#f43f5e',
-            upWickColor: '#10b981',
-            downWickColor: '#f43f5e',
-          },
-        },
-        xAxis: { axisLine: { color: '#334155' }, tickText: { color: '#94a3b8' } },
-        yAxis: { axisLine: { color: '#334155' }, tickText: { color: '#94a3b8' } },
-      },
+      styles: buildKlineChartStyles(curTheme),
     });
     if (!chart) return;
+    chart.setTimezone(curTz);
     chartRef.current = chart;
     const ro = new ResizeObserver(() => chart.resize());
     ro.observe(el);
@@ -126,13 +130,23 @@ export function BacktestVisualHubBoard({
     };
   }, []);
 
-  // Load trade-scoped historical candle window from GCS/IndexedDB & draw trade-scoped overlays
+  // Live-sync global Settings chart theme & timezone
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.setStyles(buildKlineChartStyles(theme));
+    chart.setTimezone(timezone);
+  }, [theme, timezone]);
+
+  // Load trade-scoped historical candle window from GCS/IndexedDB & draw R:R zone + ICT overlays
   useEffect(() => {
     if (!selectedTrade) return;
     let cancelled = false;
     const symLower = symbol.toLowerCase();
-    const padBefore = tf === 'm15' ? 48 * 3_600_000 : 120 * 3_600_000;
-    const padAfter = tf === 'm15' ? 24 * 3_600_000 : 72 * 3_600_000;
+    const padBefore =
+      tf === 'm5' ? 18 * 3_600_000 : tf === 'm15' ? 48 * 3_600_000 : 120 * 3_600_000;
+    const padAfter =
+      tf === 'm5' ? 8 * 3_600_000 : tf === 'm15' ? 24 * 3_600_000 : 72 * 3_600_000;
     const from = Math.max(0, selectedTrade.entry_time - padBefore);
     const to = selectedTrade.exit_time + padAfter;
 
@@ -159,22 +173,26 @@ export function BacktestVisualHubBoard({
 
         if (klines.length === 0) return;
 
-        // 1) Entry / SL / TP bracket levels
+        // 1) Shaded R:R Zone Markup Tool (Entry line + Red SL Risk Zone + Green TP Profit Zone + Pills)
         if (showBracket) {
-          const bracket: Array<{ val: number; color: string; dashed?: boolean }> = [
-            { val: selectedTrade.entry, color: '#38bdf8', dashed: true },
-            { val: selectedTrade.sl, color: '#f43f5e' },
-            { val: selectedTrade.tp, color: '#10b981' },
-          ];
-          for (const b of bracket) {
-            if (!Number.isFinite(b.val)) continue;
-            chart.createOverlay({
-              name: 'horizontalStraightLine',
-              lock: true,
-              points: [{ timestamp: selectedTrade.entry_time, value: b.val }],
-              styles: { line: { color: b.color, size: 1.5, style: b.dashed ? LineType.Dashed : LineType.Solid } },
-            });
-          }
+          chart.createOverlay({
+            name: ICT_TRADE_BOX,
+            lock: true,
+            points: [
+              { timestamp: selectedTrade.entry_time, value: selectedTrade.entry },
+              { timestamp: selectedTrade.exit_time, value: selectedTrade.exit_price },
+              { timestamp: selectedTrade.entry_time, value: selectedTrade.sl },
+              { timestamp: selectedTrade.entry_time, value: selectedTrade.tp },
+            ],
+            extendData: {
+              side: selectedTrade.direction === 'BEAR' ? 'short' : 'long',
+              hasSl: Number.isFinite(selectedTrade.sl),
+              hasTp: Number.isFinite(selectedTrade.tp),
+              prec,
+              qty: 1,
+              pnl: selectedTrade.r_08,
+            },
+          });
         }
 
         // 2) Trade-scoped Sweep / BOS / MSS levels
@@ -195,21 +213,31 @@ export function BacktestVisualHubBoard({
           }
         }
 
-        // 3) Trade-scoped FVG / OB zone boundaries
+        // 3) Trade-scoped shaded FVG / OB boxes (ICT_BOX)
         if (showZones && selectedTrade.zones?.length) {
-          for (const z of selectedTrade.zones.slice(0, 6)) {
-            const zColor = z.direction === 'bull' ? '#22c55e' : '#ef4444';
+          for (const z of selectedTrade.zones.slice(0, 8)) {
+            const isBull = z.direction === 'bull';
+            const isOb = z.type === 'order_block';
+            const color = isOb ? (isBull ? '#3b82f6' : '#f59e0b') : isBull ? '#16a34a' : '#dc2626';
+            const fill = isOb
+              ? isBull
+                ? 'rgba(59,130,246,0.12)'
+                : 'rgba(245,158,11,0.12)'
+              : isBull
+                ? 'rgba(22,163,74,0.12)'
+                : 'rgba(220,38,38,0.12)';
             chart.createOverlay({
-              name: 'horizontalStraightLine',
+              name: ICT_BOX,
               lock: true,
-              points: [{ timestamp: z.t_start || selectedTrade.entry_time, value: z.top }],
-              styles: { line: { color: zColor, size: 1, style: LineType.Dashed } },
-            });
-            chart.createOverlay({
-              name: 'horizontalStraightLine',
-              lock: true,
-              points: [{ timestamp: z.t_start || selectedTrade.entry_time, value: z.bottom }],
-              styles: { line: { color: zColor, size: 1, style: LineType.Dashed } },
+              points: [
+                { timestamp: z.t_start || selectedTrade.entry_time, value: z.top },
+                { timestamp: z.t_end || selectedTrade.exit_time, value: z.bottom },
+              ],
+              extendData: {
+                color,
+                fill,
+                label: isOb ? 'OB' : 'FVG',
+              },
             });
           }
         }
@@ -266,7 +294,7 @@ export function BacktestVisualHubBoard({
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1 text-[11px] text-slate-300">
             <input type="checkbox" checked={showBracket} onChange={(e) => setShowBracket(e.target.checked)} />
-            Entry/SL/TP
+            R:R Zone
           </label>
           <label className="flex items-center gap-1 text-[11px] text-slate-300">
             <input type="checkbox" checked={showLevels} onChange={(e) => setShowLevels(e.target.checked)} />
@@ -277,16 +305,16 @@ export function BacktestVisualHubBoard({
             FVG/OB
           </label>
           <div className="flex items-center rounded border border-slate-800 bg-slate-950 p-0.5">
-            {(['m15', 'h1', 'h4'] as const).map((t) => (
+            {TF_BUTTONS.map((item) => (
               <button
-                key={t}
+                key={item.tf}
                 type="button"
-                onClick={() => setTf(t)}
-                className={`rounded px-2 py-0.5 font-mono text-[11px] uppercase ${
-                  tf === t ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                onClick={() => setTf(item.tf)}
+                className={`rounded px-2 py-0.5 font-mono text-[11px] ${
+                  tf === item.tf ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                {t}
+                {item.label}
               </button>
             ))}
           </div>
@@ -321,7 +349,7 @@ export function BacktestVisualHubBoard({
             </div>
           )}
 
-          <div className="relative min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1" style={{ backgroundColor: theme.background }}>
             {(loadingArt || candlesLoading) && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0b0f14]/75 text-xs text-slate-300">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-400" />
