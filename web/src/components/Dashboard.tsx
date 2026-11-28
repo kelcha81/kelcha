@@ -170,7 +170,7 @@ export function Dashboard() {
     );
 
   return (
-    <div className="flex h-screen flex-col bg-[#0b0f14] text-slate-100">
+    <div className="flex h-[calc(100vh-3rem)] flex-col bg-[#0b0f14] text-slate-100">
       <TabBar />
       <TopToolbar />
 

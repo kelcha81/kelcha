@@ -59,7 +59,7 @@ export function HomeDashboard() {
   const winRate = totalTrades ? (totalWins / totalTrades) * 100 : 0;
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="mx-auto w-full max-w-5xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Backtesting Dashboard</h1>
