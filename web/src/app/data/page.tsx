@@ -8,6 +8,7 @@ import {
   Code2,
   Database,
   Download,
+  FileDown,
   Filter,
   Loader2,
   MessageSquare,
@@ -26,6 +27,7 @@ import {
   type DataStudioSchema,
   type PersonalAsrRecord,
 } from '@/lib/copilotApi';
+import { buildCopilotAsrMarkdown, downloadMarkdownFile } from '@/lib/obsidian/asr';
 import { useCopilotStore } from '@/store/copilotStore';
 
 const MONTHS = [
@@ -54,31 +56,31 @@ const CLUSTERS: Record<string, string[]> = {
 
 const SQL_TEMPLATES: Array<{ label: string; sql: string }> = [
   {
-    label: 'June 2026: Model vs ASRs',
+    label: 'Oct–Nov 2026: Model vs Gen-3 ASRs',
     sql: `SELECT 'MODEL' AS source, symbol, COUNT(*) AS trades,
        SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) AS wins,
        ROUND(SUM(r_08), 2) AS net_r
 FROM model_trades
-WHERE run_id = 'v5_18pair_baseline' AND ym = '2026-06'
+WHERE run_id = 'v5_18pair_baseline' AND ym >= '2026-10'
 GROUP BY symbol
 UNION ALL
-SELECT 'PERSONAL_ASR' AS source, symbol, COUNT(*) AS trades,
+SELECT 'GEN3_ASR' AS source, symbol, COUNT(*) AS trades,
        SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) AS wins,
        ROUND(COALESCE(SUM(pnl_r), 0), 2) AS net_r
 FROM personal_asrs
-WHERE ym = '2026-06'
+WHERE executed = TRUE AND ym >= '2026-10'
 GROUP BY symbol
 ORDER BY symbol, source`,
   },
   {
-    label: 'Monthly Trade Count (Model vs ASRs)',
+    label: 'Monthly Trade Count (Model vs Gen-3 ASRs)',
     sql: `WITH m AS (
   SELECT ym, COUNT(*) AS model_trades, ROUND(SUM(r_08), 2) AS model_r
-  FROM model_trades WHERE run_id = 'v5_18pair_baseline' AND year >= 2025
+  FROM model_trades WHERE run_id = 'v5_18pair_baseline' AND ym >= '2026-10'
   GROUP BY ym
 ), a AS (
   SELECT ym, COUNT(*) AS asr_trades, ROUND(COALESCE(SUM(pnl_r), 0), 2) AS asr_r
-  FROM personal_asrs WHERE year >= 2025
+  FROM personal_asrs WHERE executed = TRUE
   GROUP BY ym
 )
 SELECT COALESCE(m.ym, a.ym) AS month,
@@ -90,6 +92,17 @@ FROM m LEFT JOIN a ON m.ym = a.ym
 ORDER BY month DESC`,
   },
   {
+    label: 'Rule Adherence vs Win Rate (Gen-3 ASRs)',
+    sql: `SELECT CASE WHEN rules_violated_count = 0 THEN '0 Violations' ELSE '1+ Violations' END AS discipline,
+       COUNT(*) AS trades,
+       SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) AS wins,
+       ROUND(100.0 * SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) / COUNT(*), 1) AS wr_pct,
+       ROUND(COALESCE(SUM(pnl_r), 0), 2) AS total_r
+FROM personal_asrs
+WHERE executed = TRUE
+GROUP BY discipline`,
+  },
+  {
     label: 'Day-of-Week Edge (2025–2026 OOS)',
     sql: `SELECT dow, COUNT(*) AS trades,
        ROUND(100.0 * SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) / COUNT(*), 1) AS wr_pct,
@@ -99,15 +112,6 @@ FROM model_trades
 WHERE run_id = 'v5_18pair_baseline' AND year >= 2025
 GROUP BY dow
 ORDER BY net_r_08 DESC`,
-  },
-  {
-    label: 'Personal ASR Skeptic Buckets',
-    sql: `SELECT process_bucket, COUNT(*) AS count,
-       SUM(CASE WHEN outcome = 'WIN' THEN 1 ELSE 0 END) AS wins,
-       ROUND(COALESCE(SUM(pnl_r), 0), 2) AS total_r
-FROM personal_asrs
-GROUP BY process_bucket
-ORDER BY count DESC`,
   },
   {
     label: 'Live Stage-3 Radar Signals',
@@ -152,6 +156,7 @@ export default function DataStudioPage() {
   const [monthFilter, setMonthFilter] = useState<number | 'all'>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'WIN' | 'LOSS'>('all');
   const [dirFilter, setDirFilter] = useState<'all' | 'BULL' | 'BEAR'>('all');
+  const [executedAsrsOnly, setExecutedAsrsOnly] = useState(true);
   const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
   const [chartType, setChartType] = useState<'freq' | 'equity' | 'pair_r'>('freq');
   const [tableTab, setTableTab] = useState<'model' | 'asr'>('model');
@@ -255,6 +260,7 @@ export default function DataStudioPage() {
 
   const filteredAsrs = useMemo(() => {
     return personalAsrs.filter((a) => {
+      if (executedAsrsOnly && a.executed === false) return false;
       if (yearFilter !== 'all' && a.year !== yearFilter) return false;
       if (monthFilter !== 'all' && a.month !== monthFilter) return false;
       if (outcomeFilter !== 'all' && a.outcome !== outcomeFilter) return false;
@@ -262,7 +268,7 @@ export default function DataStudioPage() {
       if (selectedPairs.length > 0 && !selectedPairs.includes(a.symbol)) return false;
       return true;
     });
-  }, [personalAsrs, yearFilter, monthFilter, outcomeFilter, dirFilter, selectedPairs]);
+  }, [personalAsrs, executedAsrsOnly, yearFilter, monthFilter, outcomeFilter, dirFilter, selectedPairs]);
 
   const kpis = useMemo(() => {
     const mN = filteredModel.length;
@@ -662,7 +668,16 @@ export default function DataStudioPage() {
             </div>
 
             <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-4">
-              <div className="text-[10px] uppercase text-amber-300">Your Personal ASRs</div>
+              <div className="flex items-center justify-between gap-2 text-[10px] uppercase text-amber-300">
+                <span>Gen-3 Live ASRs (pnl_r)</span>
+                <button
+                  type="button"
+                  onClick={() => setExecutedAsrsOnly((v) => !v)}
+                  className="rounded border border-amber-500/40 bg-amber-950/40 px-1.5 py-0.5 text-[9px] text-amber-200 hover:bg-amber-800/40"
+                >
+                  {executedAsrsOnly ? 'Executed Only' : 'Incl. Missed/Draft'}
+                </button>
+              </div>
               <div className="mt-1 flex items-baseline gap-2 font-mono">
                 <span className="text-2xl font-bold text-white">{kpis.aN}</span>
                 <span className={`text-sm font-semibold ${kpis.aNetR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -1020,12 +1035,37 @@ export default function DataStudioPage() {
                           </span>
                         </td>
                         <td className="px-2 py-1.5 text-right font-sans">
-                          <Link
-                            href={`/?backtest=${encodeURIComponent(selectedRunId)}&symbol=${encodeURIComponent(t.symbol)}&trade=${encodeURIComponent(t.trade_id)}`}
-                            className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-600/15 px-1.5 py-0.5 text-[10px] text-sky-300 hover:bg-sky-600 hover:text-white"
-                          >
-                            <CandlestickChart className="h-3 w-3" /> R:R Chart
-                          </Link>
+                          <div className="inline-flex items-center gap-1.5">
+                            <Link
+                              href={`/?backtest=${encodeURIComponent(selectedRunId)}&symbol=${encodeURIComponent(t.symbol)}&trade=${encodeURIComponent(t.trade_id)}`}
+                              className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-600/15 px-1.5 py-0.5 text-[10px] text-sky-300 hover:bg-sky-600 hover:text-white"
+                            >
+                              <CandlestickChart className="h-3 w-3" /> R:R Chart
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const { filename, markdown } = buildCopilotAsrMarkdown({
+                                  date: t.date,
+                                  symbol: t.symbol,
+                                  direction: t.direction,
+                                  entry: t.entry,
+                                  sl: t.sl,
+                                  tp: t.tp,
+                                  pnlR: spread === '0.8p' ? t.r_08 : t.r_12,
+                                  outcome: t.outcome,
+                                  signalId: `${selectedRunId}:${t.trade_id}`,
+                                  verdict: selectedRunId,
+                                });
+                                downloadMarkdownFile(filename, markdown);
+                                toast.success(`Downloaded ${filename}`);
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-600/15 px-1.5 py-0.5 text-[10px] text-amber-200 hover:bg-amber-600 hover:text-white"
+                              title="Export Gen-3 Obsidian Daily ASR (.md)"
+                            >
+                              <FileDown className="h-3 w-3" /> .md
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1047,8 +1087,11 @@ export default function DataStudioPage() {
                       <th className="px-2 py-2">Date</th>
                       <th className="px-2 py-2">Pair</th>
                       <th className="px-2 py-2">Dir</th>
+                      <th className="px-2 py-2">KZ</th>
                       <th className="px-2 py-2">Outcome</th>
                       <th className="px-2 py-2 text-right">PnL R</th>
+                      <th className="px-2 py-2">Entry / SL / TP</th>
+                      <th className="px-2 py-2 text-right">Rules</th>
                       <th className="px-2 py-2">Skeptic Bucket</th>
                       <th className="px-2 py-2">Takeaway</th>
                     </tr>
@@ -1059,6 +1102,7 @@ export default function DataStudioPage() {
                         <td className="px-2 py-1.5 font-mono text-slate-300">{a.date}</td>
                         <td className="px-2 py-1.5 font-mono font-semibold text-white">{a.symbol || '—'}</td>
                         <td className="px-2 py-1.5 font-mono text-slate-300">{a.direction}</td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-400">{a.killzone || '—'}</td>
                         <td className="px-2 py-1.5">
                           <span
                             className={`rounded px-1.5 py-0.5 text-[10px] ${
@@ -1066,7 +1110,9 @@ export default function DataStudioPage() {
                                 ? 'bg-emerald-500/15 text-emerald-300'
                                 : a.outcome === 'LOSS'
                                   ? 'bg-rose-500/20 text-rose-300'
-                                  : 'bg-slate-800 text-slate-400'
+                                  : a.outcome === 'MISSED'
+                                    ? 'bg-amber-500/15 text-amber-300'
+                                    : 'bg-slate-800 text-slate-400'
                             }`}
                           >
                             {a.outcome}
@@ -1074,6 +1120,18 @@ export default function DataStudioPage() {
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono text-slate-200">
                           {a.pnl_r !== null ? `${a.pnl_r >= 0 ? '+' : ''}${a.pnl_r.toFixed(2)}R` : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-400">
+                          {a.entry != null ? `${a.entry} / ${a.sl ?? '—'} / ${a.tp ?? '—'}` : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px]">
+                          {a.rules_followed_count || a.rules_violated_count ? (
+                            <span className={(a.rules_violated_count ?? 0) > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                              ✓{a.rules_followed_count ?? 0} / ✗{a.rules_violated_count ?? 0}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-400">{a.process_bucket}</td>
                         <td className="max-w-xs truncate px-2 py-1.5 text-[11px] text-slate-300">
@@ -1083,8 +1141,8 @@ export default function DataStudioPage() {
                     ))}
                     {filteredAsrs.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-6 text-center text-slate-500">
-                          No personal ASRs match this custom filter.
+                        <td colSpan={10} className="py-6 text-center text-slate-500">
+                          No Gen-3 Live ASRs match this custom filter.
                         </td>
                       </tr>
                     )}

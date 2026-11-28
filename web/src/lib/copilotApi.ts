@@ -296,10 +296,24 @@ export interface PersonalAsrRecord {
   month: number;
   ym: string;
   direction: string;
-  outcome: 'WIN' | 'LOSS' | 'BE' | 'UNKNOWN';
+  outcome: 'WIN' | 'LOSS' | 'BE' | 'MISSED' | 'DRAFT' | 'UNKNOWN';
+  executed?: boolean;
   pnl_r: number | null;
-  process_bucket: string;
+  pnl_r_source?: string;
+  account_pct?: number | null;
+  pnl_pips?: number | null;
+  entry?: number | null;
+  sl?: number | null;
+  tp?: number | null;
+  killzone?: string;
+  po3_phase?: string;
+  confidence?: string;
   setup_grade?: string;
+  rules_followed_count?: number;
+  rules_violated_count?: number;
+  copilot_signal_id?: string;
+  asr_gen?: string;
+  process_bucket: string;
   do_not_imitate?: boolean;
   key_rule_takeaway?: string;
 }
