@@ -41,7 +41,7 @@ $REGION          = "europe-west2"             # London; pick your closest region
 $AR_REPO         = "containers"
 $CANDLES_BUCKET  = "$PROJECT_ID-candles"
 $ATTACH_BUCKET   = "$PROJECT_ID-attachments"
-$GITHUB_REPO     = "kelcha81/<REPO_NAME>"     # <-- set the real repo path
+$GITHUB_REPO     = "kelcha81/kelcha"           # Co-Pilot web + engine repo (`co-pilot-516023`)
 ```
 
 ## 1. Enable APIs

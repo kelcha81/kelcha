@@ -1,7 +1,7 @@
-# kelcha — forex backtester + journal
+# Co-Pilot — ICT Backtester, Journal & Trading Twin
 
 A multi-tenant web product for ICT-style forex/indices backtesting with direct
-trade journalling. Deployed on GCP Cloud Run.
+trade journalling and Trading Twin Co-Pilot integration. Deployed on GCP Cloud Run (`co-pilot-516023`).
 
 ## Layout
 
