@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, FolderOpen, RefreshCw } from 'lucide-react';
+import { X, FolderOpen, RefreshCw, Palette } from 'lucide-react';
 import { useObsidianStore } from '@/store/obsidianStore';
+import { useSettingsStore, PRESETS, type ChartTheme } from '@/store/settingsStore';
 import { useVault } from '@/lib/obsidian/vaultFs';
 import {
   notionStatus,
@@ -17,10 +18,46 @@ import { Modal } from '@/components/ui/dialog';
 
 const field = 'rounded border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100';
 
-/** App settings: journaling target (Obsidian | Notion) + each one's config. */
+const CHART_SWATCHES: { key: keyof ChartTheme; label: string }[] = [
+  { key: 'up', label: 'Up candle' },
+  { key: 'down', label: 'Down candle' },
+  { key: 'upBorder', label: 'Up border' },
+  { key: 'downBorder', label: 'Down border' },
+  { key: 'background', label: 'Background' },
+  { key: 'grid', label: 'Grid' },
+  { key: 'text', label: 'Axis text' },
+  { key: 'axis', label: 'Axis lines' },
+];
+
+const TIMEZONES = [
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Europe/London', label: 'London (UK)' },
+  { value: 'America/New_York', label: 'New York (ET)' },
+  { value: 'Asia/Tokyo', label: 'Tokyo (JST)' },
+  { value: 'Australia/Sydney', label: 'Sydney (AEST)' },
+];
+
+function swatchVal(theme: ChartTheme, key: keyof ChartTheme): string {
+  if (key === 'upBorder') return theme.upBorder ?? theme.up;
+  if (key === 'downBorder') return theme.downBorder ?? theme.down;
+  return theme[key] as string;
+}
+
+/** App settings: global chart styling + journaling target (Obsidian | Notion). */
 export function Settings({ onClose }: { onClose: () => void }) {
   const cfg = useObsidianStore();
   const vault = useVault();
+  const theme = useSettingsStore((s) => s.theme);
+  const preset = useSettingsStore((s) => s.preset);
+  const customThemes = useSettingsStore((s) => s.customThemes);
+  const timezone = useSettingsStore((s) => s.timezone);
+  const applyPreset = useSettingsStore((s) => s.applyPreset);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const saveTheme = useSettingsStore((s) => s.saveTheme);
+  const deleteTheme = useSettingsStore((s) => s.deleteTheme);
+  const resetTheme = useSettingsStore((s) => s.resetTheme);
+  const setTimezone = useSettingsStore((s) => s.setTimezone);
+  const [themeName, setThemeName] = useState('');
 
   const [status, setStatus] = useState<NotionStatus | null>(null);
   const [content, setContent] = useState<NotionContent>({ databases: [], pages: 0 });
@@ -83,6 +120,114 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          {/* Global Chart Appearance — applies live to Replay, Live Boards & Backtest Visual Hub */}
+          <section className="space-y-3 rounded border border-slate-800 bg-slate-900/40 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase text-slate-300">
+                <Palette className="h-3.5 w-3.5 text-sky-400" />
+                Chart Appearance (Global)
+              </div>
+              <button
+                type="button"
+                onClick={resetTheme}
+                className="text-[11px] text-slate-400 hover:text-white"
+              >
+                Reset default
+              </button>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Applies live across Manual Replay, Co-Pilot Live Boards, and the Backtest Visual Hub (synced to cloud).
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {Object.keys(PRESETS).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => applyPreset(n)}
+                  className={`rounded px-2.5 py-1 text-xs font-medium ${
+                    preset === n ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              {Object.keys(customThemes).map((n) => (
+                <span
+                  key={n}
+                  className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium ${
+                    preset === n ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <button type="button" onClick={() => applyPreset(n)}>
+                    {n}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${n}`}
+                    onClick={() => deleteTheme(n)}
+                    className="opacity-70 hover:opacity-100"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+              {CHART_SWATCHES.map(({ key, label }) => (
+                <label key={key} className="flex items-center justify-between gap-2 text-[11px] text-slate-300">
+                  <span>{label}</span>
+                  <input
+                    type="color"
+                    value={swatchVal(theme, key)}
+                    onChange={(e) => setTheme({ [key]: e.target.value })}
+                    className="h-6 w-8 cursor-pointer rounded border border-slate-700 bg-transparent"
+                  />
+                </label>
+              ))}
+            </div>
+
+            {preset === 'Custom' && (
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={themeName}
+                  onChange={(e) => setThemeName(e.target.value)}
+                  placeholder="Save custom theme as…"
+                  className="flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const n = themeName.trim();
+                    if (!n) return;
+                    saveTheme(n);
+                    setThemeName('');
+                  }}
+                  className="rounded bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-500"
+                >
+                  Save
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between border-t border-slate-800/80 pt-2">
+              <span className="text-xs text-slate-400">Chart Display Timezone</span>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+              >
+                {TIMEZONES.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
+
           {/* Journal target — the tabs below show only the selected target's settings. */}
           <section className="space-y-2">
             <div className="text-xs font-semibold uppercase text-slate-400">Journaling target</div>

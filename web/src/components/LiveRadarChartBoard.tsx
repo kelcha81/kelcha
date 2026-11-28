@@ -19,6 +19,9 @@ import {
   type LiveSignalDoc,
 } from '@/lib/copilotApi';
 import { getSymbolInfo } from '@/lib/symbols';
+import { buildKlineChartStyles } from '@/lib/chartThemeStyles';
+import { registerIctTradeBox, ICT_TRADE_BOX } from '@/lib/overlays/ictTradeBox';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useCopilotStore } from '@/store/copilotStore';
 
 type LiveTf = 'm5' | 'm15' | 'h1' | 'h4';
@@ -49,6 +52,8 @@ export function LiveRadarChartBoard({
   onSignalUpdated?: () => void;
 }) {
   const openDrawer = useCopilotStore((s) => s.openDrawer);
+  const theme = useSettingsStore((s) => s.theme);
+  const timezone = useSettingsStore((s) => s.timezone);
   const symbol = (signal?.symbol || forecastIdea?.pair || fallbackSymbol || 'EURUSD').toUpperCase();
   const fcTf = forecastIdea?.chart_levels?.tf?.toLowerCase();
   const initialTf: LiveTf =
@@ -105,31 +110,18 @@ export function LiveRadarChartBoard({
     };
   }, [symbol, tf]);
 
-  // Initialize KLineChart instance once
+  // Initialize KLineChart instance once using global Settings chart theme & timezone
   useEffect(() => {
+    registerIctTradeBox();
     const el = containerRef.current;
     if (!el) return;
+    const curTheme = useSettingsStore.getState().theme;
+    const curTz = useSettingsStore.getState().timezone;
     const chart = init(el, {
-      styles: {
-        grid: {
-          horizontal: { color: '#1e293b' },
-          vertical: { color: '#1e293b' },
-        },
-        candle: {
-          bar: {
-            upColor: '#10b981',
-            downColor: '#f43f5e',
-            upBorderColor: '#10b981',
-            downBorderColor: '#f43f5e',
-            upWickColor: '#10b981',
-            downWickColor: '#f43f5e',
-          },
-        },
-        xAxis: { axisLine: { color: '#334155' }, tickText: { color: '#94a3b8' } },
-        yAxis: { axisLine: { color: '#334155' }, tickText: { color: '#94a3b8' } },
-      },
+      styles: buildKlineChartStyles(curTheme),
     });
     if (!chart) return;
+    chart.setTimezone(curTz);
     chartRef.current = chart;
 
     const ro = new ResizeObserver(() => {
@@ -144,7 +136,15 @@ export function LiveRadarChartBoard({
     };
   }, []);
 
-  // Push candles + Entry / SL / TP / Sweep horizontal overlays whenever feed changes
+  // Live-sync global Settings chart theme & timezone
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.setStyles(buildKlineChartStyles(theme));
+    chart.setTimezone(timezone);
+  }, [theme, timezone]);
+
+  // Push candles + R:R Zone box (Radar) or structured Forecast overlays whenever feed changes
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !feed?.candles?.length) return;
@@ -162,21 +162,51 @@ export function LiveRadarChartBoard({
     chart.removeOverlay();
 
     const anchorTs = klines[Math.max(0, klines.length - 20)].timestamp;
+    const lastTs = klines[klines.length - 1].timestamp;
+
+    if (
+      signal?.telemetry &&
+      typeof signal.telemetry.entry === 'number' &&
+      typeof signal.telemetry.sl === 'number' &&
+      typeof signal.telemetry.tp === 'number'
+    ) {
+      chart.createOverlay({
+        name: ICT_TRADE_BOX,
+        lock: true,
+        points: [
+          { timestamp: anchorTs, value: signal.telemetry.entry },
+          { timestamp: lastTs, value: signal.telemetry.entry },
+          { timestamp: anchorTs, value: signal.telemetry.sl },
+          { timestamp: anchorTs, value: signal.telemetry.tp },
+        ],
+        extendData: {
+          side: signal.direction === 'BEAR' ? 'short' : 'long',
+          hasSl: true,
+          hasTp: true,
+          prec,
+          qty: 1,
+          pnl: 0,
+        },
+      });
+      if (typeof signal.telemetry.sweep_level === 'number' && Number.isFinite(signal.telemetry.sweep_level)) {
+        chart.createOverlay({
+          name: 'horizontalStraightLine',
+          lock: true,
+          points: [{ timestamp: anchorTs, value: signal.telemetry.sweep_level }],
+          styles: { line: { color: '#f59e0b', size: 1.5, style: LineType.Dashed } },
+        });
+      }
+      return;
+    }
+
     const fcLvl = forecastIdea?.chart_levels;
-    const levels: Array<{ value?: number | null; color: string; dashed?: boolean }> = signal
-      ? [
-          { value: signal.telemetry?.entry, color: '#38bdf8', dashed: true },
-          { value: signal.telemetry?.sl, color: '#f43f5e' },
-          { value: signal.telemetry?.tp, color: '#10b981' },
-          { value: signal.telemetry?.sweep_level, color: '#f59e0b', dashed: true },
-        ]
-      : [
-          { value: fcLvl?.poi_top, color: '#818cf8', dashed: true },
-          { value: fcLvl?.poi_bottom, color: '#818cf8', dashed: true },
-          { value: fcLvl?.draw_price, color: '#10b981' },
-          { value: fcLvl?.invalidation_price, color: '#f43f5e' },
-          { value: fcLvl?.sweep_level, color: '#f59e0b', dashed: true },
-        ];
+    const levels: Array<{ value?: number | null; color: string; dashed?: boolean }> = [
+      { value: fcLvl?.poi_top, color: '#818cf8', dashed: true },
+      { value: fcLvl?.poi_bottom, color: '#818cf8', dashed: true },
+      { value: fcLvl?.draw_price, color: '#10b981' },
+      { value: fcLvl?.invalidation_price, color: '#f43f5e' },
+      { value: fcLvl?.sweep_level, color: '#f59e0b', dashed: true },
+    ];
     for (const lvl of levels) {
       if (typeof lvl.value !== 'number' || !Number.isFinite(lvl.value) || lvl.value <= 0) continue;
       chart.createOverlay({
@@ -336,7 +366,7 @@ export function LiveRadarChartBoard({
             </div>
           )}
 
-          <div className="relative min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1" style={{ backgroundColor: theme.background }}>
             {loading && !feed && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0b0f14]/80 text-xs text-slate-400">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-400" /> Loading live {symbol} {tf.toUpperCase()} candles…
