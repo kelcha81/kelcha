@@ -173,12 +173,11 @@ export function CopilotChatBody({ fullPage = false }: { fullPage?: boolean }) {
     messages,
     addMessage,
     clearMessages,
-    prefillPrompt,
-    setPrefillPrompt,
+    draftInput: input,
+    setDraftInput: setInput,
     closeDrawer,
   } = useCopilotStore();
 
-  const [input, setInput] = useState('');
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [imageMime, setImageMime] = useState<string>('image/png');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -186,13 +185,6 @@ export function CopilotChatBody({ fullPage = false }: { fullPage?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (prefillPrompt) {
-      setInput(prefillPrompt);
-      setPrefillPrompt('');
-    }
-  }, [prefillPrompt, setPrefillPrompt]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });

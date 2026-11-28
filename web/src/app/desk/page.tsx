@@ -37,8 +37,26 @@ export default function LiveDeskPage() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await copilotApi.signals();
+        if (!cancelled) {
+          setSnap(res);
+          setErr(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setErr(e instanceof Error ? e.message : 'Failed to load Live Desk');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSignalAction(sig: LiveSignalDoc, action: 'took' | 'skip' | 'win' | 'loss') {
     setActionBusy(`${sig.signal_id}:${action}`);

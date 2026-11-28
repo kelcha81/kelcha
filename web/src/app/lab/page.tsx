@@ -76,8 +76,24 @@ export default function QuantLabPage() {
   }, []);
 
   useEffect(() => {
-    void loadLab();
-  }, [loadLab]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [hRes, pRes] = await Promise.all([copilotApi.listHypotheses(), copilotApi.proposals()]);
+        if (!cancelled) {
+          setHypotheses(hRes.hypotheses);
+          setProposals(pRes.proposals);
+        }
+      } catch {
+        /* tolerate cold twin */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const activeRows = useMemo(
     () => (exclDrags ? V5_18_PAIR_BASELINE.filter((r) => !(r.is08 < 0 && r.oos08 < 0)) : V5_18_PAIR_BASELINE),

@@ -74,8 +74,28 @@ export default function KnowledgePage() {
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cRes, pbRes] = await Promise.all([copilotApi.cases({ limit: 300 }), copilotApi.playbook()]);
+        if (!cancelled) {
+          setCases(cRes.cases);
+          setSummary(cRes.summary);
+          setPlaybook(pbRes);
+          setErr(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setErr(e instanceof Error ? e.message : 'Failed to load Knowledge Library');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
