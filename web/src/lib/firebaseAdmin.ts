@@ -11,7 +11,7 @@ function app(): App {
   if (!_app) {
     _app =
       getApps()[0] ??
-      initializeApp({ credential: applicationDefault(), projectId: 'lc-trading' });
+      initializeApp({ credential: applicationDefault(), projectId: process.env.GCP_PROJECT_ID || 'co-pilot-516023' });
   }
   return _app;
 }
