@@ -1,8 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  CandlestickChart,
   Database,
   FlaskConical,
   Loader2,
@@ -230,7 +232,8 @@ export default function QuantLabPage() {
                     <th className="py-2 pr-2 text-right">IS (22–24)</th>
                     <th className="py-2 pr-2 text-right">OOS (25–26)</th>
                     <th className="py-2 pr-2 text-right">5-Yr ({spread})</th>
-                    <th className="py-2 text-right">Status</th>
+                    <th className="py-2 pr-2 text-right">Status</th>
+                    <th className="py-2 text-right">Chart</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -253,7 +256,7 @@ export default function QuantLabPage() {
                         <td className={`py-2 pr-2 text-right font-semibold ${net >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                           {net >= 0 ? `+${net.toFixed(1)}` : net.toFixed(1)}R
                         </td>
-                        <td className="py-2 text-right font-sans">
+                        <td className="py-2 pr-2 text-right font-sans">
                           {bothPos ? (
                             <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">Both +</span>
                           ) : bothNeg ? (
@@ -261,6 +264,14 @@ export default function QuantLabPage() {
                           ) : (
                             <span className="text-[10px] text-slate-500">Mixed</span>
                           )}
+                        </td>
+                        <td className="py-2 text-right font-sans">
+                          <Link
+                            href={`/?backtest=v5_18pair_baseline&symbol=${encodeURIComponent(r.symbol)}`}
+                            className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-600/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300 hover:bg-sky-600 hover:text-white"
+                          >
+                            <CandlestickChart className="h-3 w-3" /> Inspect
+                          </Link>
                         </td>
                       </tr>
                     );
