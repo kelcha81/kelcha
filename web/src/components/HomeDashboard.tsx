@@ -1,13 +1,20 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Plus, Play, Trash2, Copy, Search, Radio, Activity } from 'lucide-react';
+import { Plus, Play, Trash2, Copy, Search, Radio, Activity, Sun, FlaskConical } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTradingStore, DEFAULT_ACCOUNT } from '@/store/tradingStore';
 import { computeStats } from '@/lib/performance';
-import { copilotApi, type DeskSnapshot, type LiveSignalDoc } from '@/lib/copilotApi';
+import {
+  copilotApi,
+  type BacktestRunSummary,
+  type DeskSnapshot,
+  type ForecastWatchlistIdea,
+  type LiveSignalDoc,
+} from '@/lib/copilotApi';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { LiveRadarChartBoard } from '@/components/LiveRadarChartBoard';
+import { BacktestVisualHubBoard } from '@/components/BacktestVisualHubBoard';
 import { confirm } from '@/components/ui/confirm';
 import { Tooltip } from '@/components/ui/tooltip';
 
@@ -38,23 +45,49 @@ export function HomeDashboard() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('recent');
   const [deskSnap, setDeskSnap] = useState<DeskSnapshot | null>(null);
+  const [backtestRuns, setBacktestRuns] = useState<BacktestRunSummary[]>([]);
   const [activeLiveSignal, setActiveLiveSignal] = useState<LiveSignalDoc | null>(null);
+  const [activeForecastBoard, setActiveForecastBoard] = useState<{
+    idea: ForecastWatchlistIdea;
+    session?: string;
+  } | null>(null);
   const [activeLivePair, setActiveLivePair] = useState<{ symbol: string; title?: string; notes?: string } | null>(null);
+  const [activeBacktest, setActiveBacktest] = useState<{ runId: string; symbol?: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const radarId = params?.get('radar') || '';
+    const forecastId = params?.get('forecast') || '';
     const pairParam = params?.get('pair') || '';
+    const btRun = params?.get('backtest') || '';
+    const btSym = params?.get('symbol') || '';
 
     (async () => {
       try {
-        const snap = await copilotApi.signals();
+        const [snap, btRes] = await Promise.all([
+          copilotApi.signals().catch(() => null),
+          copilotApi.backtestRuns().catch(() => null),
+        ]);
         if (cancelled) return;
-        setDeskSnap(snap);
-        if (radarId) {
+        if (snap) setDeskSnap(snap);
+        if (btRes?.runs) setBacktestRuns(btRes.runs);
+
+        if (btRun) {
+          setActiveBacktest({ runId: btRun, symbol: btSym || undefined });
+        } else if (radarId && snap) {
           const hit = snap.signals.find((s) => s.signal_id === radarId || s.trade_id === radarId);
           if (hit) setActiveLiveSignal(hit);
+        } else if (forecastId && pairParam && snap) {
+          const fc = snap.forecasts.find((f) => f.forecast_id === forecastId) || snap.forecasts[0];
+          const idea = fc?.forecast?.watchlist_ideas?.find(
+            (i) => i.pair.toUpperCase() === pairParam.toUpperCase()
+          );
+          if (idea) {
+            setActiveForecastBoard({ idea, session: fc?.session });
+          } else {
+            setActiveLivePair({ symbol: pairParam.toUpperCase(), title: `${pairParam.toUpperCase()} Live Forecast` });
+          }
         } else if (pairParam) {
           setActiveLivePair({ symbol: pairParam.toUpperCase(), title: `${pairParam.toUpperCase()} Live Forecast` });
         }
@@ -67,15 +100,34 @@ export function HomeDashboard() {
     };
   }, []);
 
-  if (activeLiveSignal || activeLivePair) {
+  if (activeBacktest) {
+    return (
+      <BacktestVisualHubBoard
+        runId={activeBacktest.runId}
+        initialSymbol={activeBacktest.symbol}
+        runs={backtestRuns}
+        onBack={() => {
+          setActiveBacktest(null);
+          if (typeof window !== 'undefined' && window.location.search) {
+            window.history.replaceState({}, '', '/');
+          }
+        }}
+      />
+    );
+  }
+
+  if (activeLiveSignal || activeForecastBoard || activeLivePair) {
     return (
       <LiveRadarChartBoard
         signal={activeLiveSignal}
+        forecastIdea={activeForecastBoard?.idea}
+        forecastSession={activeForecastBoard?.session}
         fallbackSymbol={activeLivePair?.symbol}
         fallbackTitle={activeLivePair?.title}
         fallbackNotes={activeLivePair?.notes}
         onBack={() => {
           setActiveLiveSignal(null);
+          setActiveForecastBoard(null);
           setActiveLivePair(null);
           if (typeof window !== 'undefined' && window.location.search) {
             window.history.replaceState({}, '', '/');
@@ -92,6 +144,8 @@ export function HomeDashboard() {
   const allSignals = deskSnap?.signals || [];
   const todaySignals = allSignals.filter((s) => (s.date || s.created_at || '').startsWith(todayUtc));
   const shownSignals = todaySignals.length > 0 ? todaySignals : allSignals.slice(0, 6);
+  const latestForecast = deskSnap?.forecasts?.[0];
+  const forecastIdeas = latestForecast?.forecast?.watchlist_ideas || [];
   const igHealth = deskSnap?.ig_shadow;
 
   const sessions = tabs
@@ -149,12 +203,43 @@ export function HomeDashboard() {
           )}
         </div>
 
-        {shownSignals.length === 0 ? (
+        {shownSignals.length === 0 && forecastIdeas.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/30 p-6 text-center text-xs text-slate-400">
-            No live Radar setups yet today. Signals will appear here automatically during London &amp; NY Killzones.
+            No live Radar setups or Morning Forecasts yet today. Boards appear here automatically during London &amp; NY Killzones.
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {forecastIdeas.map((idea, idx) => (
+              <div
+                key={`fc-${idea.pair}-${idx}`}
+                className="flex flex-col justify-between rounded-lg border border-indigo-500/30 bg-indigo-950/15 p-3.5 transition hover:border-indigo-400"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 font-mono text-sm font-bold text-slate-100">
+                      <Sun className="h-3.5 w-3.5 text-amber-400" />
+                      {idea.pair}
+                    </span>
+                    <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-200">
+                      {idea.bias}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    {latestForecast?.session || 'Morning Forecast'} · {idea.setup_type || 'HTF Bias'}
+                  </div>
+                  {idea.narrative && (
+                    <p className="mt-2 line-clamp-2 text-[11px] text-slate-300">{idea.narrative}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveForecastBoard({ idea, session: latestForecast?.session })}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded bg-indigo-600/20 py-1.5 text-xs font-medium text-indigo-200 ring-1 ring-indigo-500/30 hover:bg-indigo-600 hover:text-white"
+                >
+                  <Play className="h-3.5 w-3.5" /> Open Forecast Chart
+                </button>
+              </div>
+            ))}
             {shownSignals.map((sig) => (
               <div
                 key={sig.signal_id}
@@ -200,7 +285,72 @@ export function HomeDashboard() {
         )}
       </section>
 
-      {/* SECTION 2: Manual Replay Sessions */}
+      {/* SECTION 2: Co-Pilot Backtest Visual Hub (Slice 3) */}
+      <section className="border-t border-slate-800/80 pt-6">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
+              <FlaskConical className="h-4 w-4 text-sky-400" />
+              Co-Pilot Backtest Visual Hub
+            </h2>
+            <p className="text-xs text-slate-400">
+              Step visually trade-by-trade through Co-Pilot&apos;s V5 &amp; Quant Lab backtests with trade-scoped FVG/OB/Sweep overlays.
+            </p>
+          </div>
+        </div>
+
+        {backtestRuns.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/30 p-5 text-center text-xs text-slate-400">
+            No exported Co-Pilot backtest runs found yet. Export a V5 or Quant Lab run to inspect trades visually here.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {backtestRuns.map((run) => (
+              <div
+                key={run.run_id}
+                className="flex flex-col justify-between rounded-lg border border-slate-800 bg-slate-900/50 p-3.5 transition hover:border-sky-500/50"
+              >
+                <div>
+                  <div className="font-medium text-slate-100">{run.name}</div>
+                  {run.description && (
+                    <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{run.description}</p>
+                  )}
+                  <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-xs">
+                    <div>
+                      <div className="font-sans text-[10px] text-slate-500">Trades</div>
+                      <div className="text-slate-200">{run.total_trades}</div>
+                    </div>
+                    <div>
+                      <div className="font-sans text-[10px] text-slate-500">Win %</div>
+                      <div className="text-sky-300">{run.win_rate.toFixed(1)}%</div>
+                    </div>
+                    <div>
+                      <div className="font-sans text-[10px] text-slate-500">Net (0.8p)</div>
+                      <div className={run.net_r_08 >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {run.net_r_08 >= 0 ? `+${run.net_r_08}` : run.net_r_08}R
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveBacktest({
+                      runId: run.run_id,
+                      symbol: run.symbols?.[0]?.symbol,
+                    })
+                  }
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded bg-sky-600/20 py-1.5 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30 hover:bg-sky-600 hover:text-white"
+                >
+                  <Play className="h-3.5 w-3.5" /> Inspect Trades on Chart
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* SECTION 3: Manual Replay Sessions */}
       <section className="border-t border-slate-800/80 pt-6">
         <div className="mb-6 flex items-center justify-between">
           <div>

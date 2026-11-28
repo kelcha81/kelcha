@@ -208,7 +208,7 @@ export default function LiveDeskPage() {
                               {idea.bias}
                             </span>
                             <Link
-                              href={`/?pair=${encodeURIComponent(idea.pair)}`}
+                              href={`/?forecast=${encodeURIComponent(latestForecast.forecast_id)}&pair=${encodeURIComponent(idea.pair)}`}
                               className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-600/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300 hover:bg-sky-600 hover:text-white"
                             >
                               <CandlestickChart className="h-3 w-3" /> Chart

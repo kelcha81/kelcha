@@ -12,7 +12,12 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { copilotApi, type LiveCandlesResponse, type LiveSignalDoc } from '@/lib/copilotApi';
+import {
+  copilotApi,
+  type ForecastWatchlistIdea,
+  type LiveCandlesResponse,
+  type LiveSignalDoc,
+} from '@/lib/copilotApi';
 import { getSymbolInfo } from '@/lib/symbols';
 import { useCopilotStore } from '@/store/copilotStore';
 
@@ -26,6 +31,8 @@ const TF_LIST: { tf: LiveTf; label: string }[] = [
 
 export function LiveRadarChartBoard({
   signal,
+  forecastIdea,
+  forecastSession,
   fallbackSymbol,
   fallbackTitle,
   fallbackNotes,
@@ -33,6 +40,8 @@ export function LiveRadarChartBoard({
   onSignalUpdated,
 }: {
   signal?: LiveSignalDoc | null;
+  forecastIdea?: ForecastWatchlistIdea | null;
+  forecastSession?: string;
   fallbackSymbol?: string;
   fallbackTitle?: string;
   fallbackNotes?: string;
@@ -40,13 +49,14 @@ export function LiveRadarChartBoard({
   onSignalUpdated?: () => void;
 }) {
   const openDrawer = useCopilotStore((s) => s.openDrawer);
-  const symbol = (signal?.symbol || fallbackSymbol || 'EURUSD').toUpperCase();
+  const symbol = (signal?.symbol || forecastIdea?.pair || fallbackSymbol || 'EURUSD').toUpperCase();
+  const fcTf = forecastIdea?.chart_levels?.tf?.toLowerCase();
   const initialTf: LiveTf =
     signal?.tf?.toLowerCase() === 'm5' || signal?.tf?.toLowerCase() === '5m'
       ? 'm5'
-      : signal?.tf?.toLowerCase() === 'h1' || signal?.tf?.toLowerCase() === '1h'
+      : signal?.tf?.toLowerCase() === 'h1' || signal?.tf?.toLowerCase() === '1h' || fcTf === 'h1'
         ? 'h1'
-        : signal?.tf?.toLowerCase() === 'h4' || signal?.tf?.toLowerCase() === '4h'
+        : signal?.tf?.toLowerCase() === 'h4' || signal?.tf?.toLowerCase() === '4h' || fcTf === 'h4'
           ? 'h4'
           : 'm15';
 
@@ -152,14 +162,23 @@ export function LiveRadarChartBoard({
     chart.removeOverlay();
 
     const anchorTs = klines[Math.max(0, klines.length - 20)].timestamp;
-    const levels: Array<{ value?: number; color: string; dashed?: boolean }> = [
-      { value: signal?.telemetry?.entry, color: '#38bdf8', dashed: true },
-      { value: signal?.telemetry?.sl, color: '#f43f5e' },
-      { value: signal?.telemetry?.tp, color: '#10b981' },
-      { value: signal?.telemetry?.sweep_level, color: '#f59e0b', dashed: true },
-    ];
+    const fcLvl = forecastIdea?.chart_levels;
+    const levels: Array<{ value?: number | null; color: string; dashed?: boolean }> = signal
+      ? [
+          { value: signal.telemetry?.entry, color: '#38bdf8', dashed: true },
+          { value: signal.telemetry?.sl, color: '#f43f5e' },
+          { value: signal.telemetry?.tp, color: '#10b981' },
+          { value: signal.telemetry?.sweep_level, color: '#f59e0b', dashed: true },
+        ]
+      : [
+          { value: fcLvl?.poi_top, color: '#818cf8', dashed: true },
+          { value: fcLvl?.poi_bottom, color: '#818cf8', dashed: true },
+          { value: fcLvl?.draw_price, color: '#10b981' },
+          { value: fcLvl?.invalidation_price, color: '#f43f5e' },
+          { value: fcLvl?.sweep_level, color: '#f59e0b', dashed: true },
+        ];
     for (const lvl of levels) {
-      if (typeof lvl.value !== 'number' || !Number.isFinite(lvl.value)) continue;
+      if (typeof lvl.value !== 'number' || !Number.isFinite(lvl.value) || lvl.value <= 0) continue;
       chart.createOverlay({
         name: 'horizontalStraightLine',
         lock: true,
@@ -173,7 +192,7 @@ export function LiveRadarChartBoard({
         },
       });
     }
-  }, [feed, signal, symbol]);
+  }, [feed, signal, forecastIdea, symbol]);
 
   async function onAction(act: 'took' | 'skip' | 'win' | 'loss') {
     if (!signal) return;
@@ -292,6 +311,24 @@ export function LiveRadarChartBoard({
               )}
             </div>
           )}
+          {!signal && forecastIdea?.chart_levels && (
+            <div className="flex flex-wrap items-center gap-4 border-b border-slate-800/80 bg-slate-950/70 px-4 py-1.5 font-mono text-[11px]">
+              {typeof forecastIdea.chart_levels.poi_top === 'number' && forecastIdea.chart_levels.poi_top > 0 && (
+                <span className="text-indigo-300">
+                  ● POI: {forecastIdea.chart_levels.poi_bottom?.toFixed(prec)}–{forecastIdea.chart_levels.poi_top.toFixed(prec)}
+                </span>
+              )}
+              {typeof forecastIdea.chart_levels.draw_price === 'number' && forecastIdea.chart_levels.draw_price > 0 && (
+                <span className="text-emerald-400">● DOL Target: {forecastIdea.chart_levels.draw_price.toFixed(prec)}</span>
+              )}
+              {typeof forecastIdea.chart_levels.invalidation_price === 'number' && forecastIdea.chart_levels.invalidation_price > 0 && (
+                <span className="text-rose-400">● Inval: {forecastIdea.chart_levels.invalidation_price.toFixed(prec)}</span>
+              )}
+              {typeof forecastIdea.chart_levels.sweep_level === 'number' && forecastIdea.chart_levels.sweep_level > 0 && (
+                <span className="text-amber-400">● Sweep: {forecastIdea.chart_levels.sweep_level.toFixed(prec)}</span>
+              )}
+            </div>
+          )}
 
           {err && (
             <div className="m-4 rounded border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-200">
@@ -398,6 +435,36 @@ export function LiveRadarChartBoard({
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          ) : forecastIdea ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Session</span>
+                  <span className="font-mono text-slate-200">{forecastSession || 'Morning Forecast'}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="text-slate-400">Bias</span>
+                  <span className="font-semibold text-indigo-300">{forecastIdea.bias}</span>
+                </div>
+                {forecastIdea.setup_type && (
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-slate-400">Model</span>
+                    <span className="text-sky-300">{forecastIdea.setup_type}</span>
+                  </div>
+                )}
+              </div>
+              {forecastIdea.narrative && (
+                <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+                  <div className="mb-1 text-[10px] font-semibold uppercase text-slate-400">HTF Narrative</div>
+                  <p className="leading-relaxed text-slate-200">{forecastIdea.narrative}</p>
+                </div>
+              )}
+              <div className="space-y-1.5 rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-[11px] text-slate-300">
+                {forecastIdea.pa_reaction_zone && <div><strong className="text-indigo-300">POI Zone:</strong> {forecastIdea.pa_reaction_zone}</div>}
+                {forecastIdea.pa_where_to_fill && <div><strong className="text-emerald-300">DOL Target:</strong> {forecastIdea.pa_where_to_fill}</div>}
+                {forecastIdea.trigger_to_watch && <div><strong className="text-amber-300">Trigger:</strong> {forecastIdea.trigger_to_watch}</div>}
               </div>
             </div>
           ) : (

@@ -19,7 +19,7 @@ export function AppRoot() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const qs = new URLSearchParams(window.location.search);
-    if (qs.has('radar') || qs.has('pair')) {
+    if (qs.has('radar') || qs.has('pair') || qs.has('forecast') || qs.has('backtest')) {
       goHome();
     }
   }, [goHome]);

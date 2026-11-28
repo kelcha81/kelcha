@@ -182,6 +182,28 @@ export interface LiveSignalDoc {
   review?: ReviewResult;
 }
 
+export interface ForecastChartLevels {
+  poi_top?: number | null;
+  poi_bottom?: number | null;
+  draw_price?: number | null;
+  invalidation_price?: number | null;
+  sweep_level?: number | null;
+  tf?: string;
+}
+
+export interface ForecastWatchlistIdea {
+  pair: string;
+  bias: string;
+  setup_type?: string;
+  pa_premium_discount?: string;
+  pa_htf_wick_expansion?: string;
+  pa_reaction_zone?: string;
+  pa_where_to_fill?: string;
+  narrative?: string;
+  trigger_to_watch?: string;
+  chart_levels?: ForecastChartLevels;
+}
+
 export interface ForecastDoc {
   forecast_id: string;
   trade_id?: string;
@@ -191,19 +213,60 @@ export interface ForecastDoc {
   review_model?: string;
   forecast?: {
     macro_summary?: string;
-    watchlist_ideas?: Array<{
-      pair: string;
-      bias: string;
-      setup_type?: string;
-      pa_premium_discount?: string;
-      pa_htf_wick_expansion?: string;
-      pa_reaction_zone?: string;
-      pa_where_to_fill?: string;
-      narrative?: string;
-      trigger_to_watch?: string;
-    }>;
+    watchlist_ideas?: ForecastWatchlistIdea[];
     avoid_today?: string[];
   };
+}
+
+export interface BacktestRunSymbolSummary {
+  symbol: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  net_r_08: number;
+  net_r_12: number;
+}
+
+export interface BacktestRunSummary {
+  run_id: string;
+  name: string;
+  description?: string;
+  timeframe: string;
+  created_at: string;
+  total_trades: number;
+  win_rate: number;
+  net_r_08: number;
+  net_r_12: number;
+  symbols: BacktestRunSymbolSummary[];
+}
+
+export interface VisualBacktestTrade {
+  trade_id: string;
+  entry_time: number;
+  exit_time: number;
+  direction: 'BULL' | 'BEAR';
+  entry: number;
+  sl: number;
+  tp: number;
+  exit_price: number;
+  gross_r?: number;
+  r_08: number;
+  r_12: number;
+  outcome: 'WIN' | 'LOSS';
+  vetoed?: boolean;
+  veto_reason?: string;
+  zones?: Array<{ type: string; direction: string; top: number; bottom: number; t_start: number; t_end: number }>;
+  levels?: Array<{ type: string; price: number; time: number; label: string }>;
+}
+
+export interface BacktestRunSymbolArtifact {
+  ok: boolean;
+  run_id: string;
+  symbol: string;
+  timeframe: string;
+  generated_at?: string;
+  stats: { trades: number; wins: number; win_rate: number; net_r_08: number; net_r_12: number };
+  trades: VisualBacktestTrade[];
 }
 
 export interface DeskSnapshot {
@@ -276,6 +339,11 @@ export const copilotApi = {
   liveCandles: (symbol: string, tf: 'm5' | 'm15' | 'h1' | 'h4' | 'd1' = 'm15', count = 240) =>
     twinFetch<LiveCandlesResponse>(
       `live-candles?symbol=${encodeURIComponent(symbol.toLowerCase())}&tf=${encodeURIComponent(tf)}&count=${count}`
+    ),
+  backtestRuns: () => twinFetch<{ ok: boolean; count: number; runs: BacktestRunSummary[] }>('backtest-runs'),
+  backtestRunSymbol: (runId: string, symbol: string) =>
+    twinFetch<BacktestRunSymbolArtifact>(
+      `backtest-runs?run_id=${encodeURIComponent(runId)}&symbol=${encodeURIComponent(symbol.toLowerCase())}`
     ),
   signalAction: (signal_id: string, action: 'took' | 'skip' | 'win' | 'loss') =>
     twinFetch<{ ok: boolean; signal_id: string; user_action: string; draft_id?: string }>(
